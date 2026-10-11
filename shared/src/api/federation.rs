@@ -111,6 +111,9 @@ pub struct LinkedClientEnrollmentRequest {
 pub struct LinkedClientGrant {
     pub id: Uuid,
     pub user_id: Uuid,
+    /// User-visible label for identifying the device when reviewing grants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_label: Option<String>,
     /// Display only; never an identity-linking key.
     pub user_email: String,
     /// Approved home/client origin, distinct from the issuing portal origin.
@@ -256,6 +259,7 @@ mod tests {
                 "id": "00000000-0000-0000-0000-000000000002",
                 "user_id": "00000000-0000-0000-0000-000000000003",
                 "user_email": "engineer@work.example",
+                "device_label": "Personal tablet",
                 "client_origin": "https://home.example", "scope": "write",
                 "created_at": "2026-10-11T00:00:00Z",
                 "expires_at": "2026-11-11T00:00:00Z"
