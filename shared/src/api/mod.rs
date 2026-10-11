@@ -3,6 +3,7 @@
 mod auth;
 mod device_flow;
 mod error;
+mod federation;
 mod forwards;
 mod health;
 mod history;
@@ -21,6 +22,7 @@ mod users;
 pub use auth::*;
 pub use device_flow::*;
 pub use error::*;
+pub use federation::*;
 pub use forwards::*;
 pub use health::*;
 pub use history::*;
