@@ -116,7 +116,7 @@ hostname = "0.4"
 directories = "5.0"
 
 # WebSocket bridge
-ws-bridge = "0.2.0"
+ws-bridge = { version = "1.0.0", git = "https://github.com/meawoppl/ws-bridge", tag = "v1.0.0" }
 
 # Optimize release builds for size (especially important for WASM)
 [profile.release]
