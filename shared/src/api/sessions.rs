@@ -158,8 +158,16 @@ pub struct EditStackItem {
     pub source: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<serde_json::Value>,
+    /// The captured image inline. List payloads carry it only for `pending`
+    /// items (the dashboard composes those into the agent's prompt itself);
+    /// every other item points at [`Self::image_url`] instead, so a session
+    /// with a long annotation history is not re-sent in full on each change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_data_url: Option<String>,
+    /// `GET /api/sessions/{id}/edit-stack/{item_id}/image`, present whenever
+    /// the item has a captured image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,

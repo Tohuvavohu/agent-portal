@@ -241,6 +241,10 @@ pub fn build_router(app_state: Arc<AppState>) -> anyhow::Result<Router> {
                 .delete(handlers::edit_stack::delete_edit_stack_item),
         )
         .route(
+            "/api/sessions/{id}/edit-stack/{item_id}/image",
+            get(handlers::edit_stack::get_edit_stack_item_image),
+        )
+        .route(
             "/api/sessions/{id}/turn-metrics",
             get(handlers::turn_metrics::list_turn_metrics),
         )
