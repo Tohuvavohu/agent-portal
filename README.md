@@ -256,6 +256,7 @@ the typed Rust parsers for the agent CLIs' JSON protocols.
 | [File Downloads](docs/PORTAL_FILE_DOWNLOADS.md) | `portal://file` links |
 | [Plugin Authoring](docs/PLUGIN_AUTHORING.md) | Writing plugins, skills, surfaces, commands, and toolchains |
 | [Codex Support](docs/CODEX_SUPPORT.md) | Codex integration notes |
+| [Self-Hosting](docs/SELF_HOSTING.md) | Run your own portal: one host, released image, HTTPS, backups, upgrades |
 | [Deployment Guide](docs/DEPLOYING.md) | Production deployment and OAuth setup |
 | [Docker Guide](docs/DOCKER.md) | Docker and Kubernetes with 1Password |
 | [VS Code Setup](docs/VSCODE_SETUP.md) | Portal integration for the VS Code extension |
@@ -305,7 +306,7 @@ When using the hosted instance at **txcl.io**:
 - **No Analysis**: We do not analyze, share, or use your session content for any other purpose
 - **User Control**: You can delete your sessions and associated data at any time
 
-**For complete data control**, self-host. See the [Deployment Guide](docs/DEPLOYING.md).
+**For complete data control**, self-host. See [Self-Hosting](docs/SELF_HOSTING.md).
 
 ## License
 
