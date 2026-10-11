@@ -150,7 +150,7 @@ pub enum LinkedClientPollResponse {
         /// never follow it as a credential-bearing redirect based on this alone.
         portal_origin: String,
         instance_id: Uuid,
-        grant: LinkedClientGrant,
+        grant: Box<LinkedClientGrant>,
     },
     Expired,
     Denied {
