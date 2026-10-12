@@ -23,6 +23,7 @@ pub mod plugin_discovery;
 mod proxy_token_setup;
 mod schedule_dialog;
 mod service_monitor;
+mod session_import;
 mod share_dialog;
 pub mod skip_permissions;
 pub mod sparkline;

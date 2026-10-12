@@ -93,6 +93,8 @@ Open **http://localhost:3000/** — dev mode logs you in as
 - **Model picker** fed by the SDK crates' model catalogs, per launch.
 - **Fork a session** into a new git worktree to try a second approach without
   disturbing the first.
+- **Import existing Codex conversations** from the CLI or IDE, with optional
+  history and a paused handoff. See [Session import](docs/SESSION_IMPORT.md).
 
 <img src="docs/media/feature-launch-session.webp" width="900"
      alt="The launch dialog: pick the machine, browse to a directory, choose the model, tick 'create git worktree', and click Launch. A session pill slides into the rail and the agent boots and greets you.">

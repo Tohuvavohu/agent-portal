@@ -43,6 +43,12 @@ pub struct SessionConfig {
     /// [`claude_conversation_id`](Self::claude_conversation_id).
     #[serde(default)]
     pub codex_thread_id: Option<String>,
+    /// Fail the launch instead of falling back to a fresh thread when
+    /// `thread/resume` fails or `codex_thread_id` is missing. Set for imported
+    /// conversations, whose only context lives in the native thread; ordinary
+    /// sessions fall back because the portal transcript survives regardless.
+    #[serde(default)]
+    pub codex_require_resume: bool,
     /// Claude's *current* conversation id, learned from its output stream and
     /// persisted by the launcher — the claude-side counterpart to
     /// [`codex_thread_id`](Self::codex_thread_id).
@@ -165,6 +171,7 @@ mod tests {
             muse_yolo: false,
             agent_type: Default::default(),
             codex_thread_id: None,
+            codex_require_resume: false,
             fork_from_session_id: None,
             codex_fork_from_thread_id: None,
             codex_fork_last_turn_id: None,

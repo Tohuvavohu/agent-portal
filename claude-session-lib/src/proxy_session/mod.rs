@@ -100,7 +100,8 @@ pub struct ProxySessionConfig {
 /// Most agents can answer this from `resume`: a resumed context should already
 /// contain the reminder, while a fresh launch has never seen it. Codex is the
 /// one wrinkle: a `resume` launch without a persisted app-server thread id
-/// silently starts a fresh thread, so it still needs the reminder.
+/// starts a fresh thread, so it still needs the reminder. Imported contexts
+/// are primed separately by the launcher.
 pub fn should_prime_portal_reminder_on_first_input(
     agent_type: shared::AgentType,
     resume: bool,

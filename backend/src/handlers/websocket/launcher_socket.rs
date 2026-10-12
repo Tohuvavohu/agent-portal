@@ -741,7 +741,9 @@ fn handle_launcher_message(
                 msg,
             );
         }
-        LauncherToServer::ProbeAgentsResult { request_id, .. } => {
+        LauncherToServer::ProbeAgentsResult { request_id, .. }
+        | LauncherToServer::ExternalSessionsResult { request_id, .. }
+        | LauncherToServer::PrepareSessionImportResult { request_id, .. } => {
             app_state.session_manager.complete_launcher_request(
                 super::LauncherRpcKind::Agent,
                 request_id,
