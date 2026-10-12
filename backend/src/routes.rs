@@ -467,6 +467,11 @@ pub fn build_router(app_state: Arc<AppState>) -> anyhow::Result<Router> {
         )
         .route("/api/launch", post(handlers::launchers::launch_session))
         .route(
+            "/api/launchers/{launcher_id}/external-sessions/{agent}",
+            get(handlers::session_imports::list_external_sessions)
+                .post(handlers::session_imports::import_session),
+        )
+        .route(
             "/api/sessions/{session_id}/fork",
             post(handlers::launchers::fork_session),
         )

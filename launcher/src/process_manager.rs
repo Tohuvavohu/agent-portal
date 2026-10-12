@@ -65,8 +65,78 @@ fn load_codex_threads() -> HashMap<Uuid, String> {
     load_sidecar_map(&codex_threads_path())
 }
 
-fn save_codex_threads(map: &HashMap<Uuid, String>) -> std::io::Result<()> {
-    save_sidecar_map(&codex_threads_path(), map)
+// All Codex map updates share a lock, including discoveries emitted by live
+// sessions. Atomic replacement keeps readers and restarts from seeing half JSON.
+static CODEX_MAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn update_codex_thread_map(
+    session_id: Uuid,
+    thread_id: &str,
+    importing: bool,
+) -> anyhow::Result<()> {
+    let _guard = CODEX_MAP_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Codex session map lock poisoned"))?;
+    update_codex_thread_map_at(&codex_threads_path(), session_id, thread_id, importing)
+}
+
+fn update_codex_thread_map_at(
+    path: &std::path::Path,
+    session_id: Uuid,
+    thread_id: &str,
+    importing: bool,
+) -> anyhow::Result<()> {
+    let mut map: HashMap<Uuid, String> = match std::fs::read_to_string(path) {
+        Ok(body) => serde_json::from_str(&body)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(e) => return Err(e.into()),
+    };
+    if importing {
+        if map
+            .iter()
+            .any(|(id, thread)| thread == thread_id && *id != session_id)
+        {
+            anyhow::bail!("This Codex conversation is already managed by another Portal session");
+        }
+        if map
+            .get(&session_id)
+            .is_some_and(|thread| thread != thread_id)
+        {
+            anyhow::bail!("Portal session is already bound to another Codex conversation");
+        }
+    }
+    if importing {
+        // Separate additive metadata keeps codex_threads.json compatible with
+        // older launchers. Imported contexts need the Portal reminder on their
+        // first user input after resume; native history has never received it.
+        let imports_path = path.with_file_name("codex_imports.json");
+        let mut imports: HashMap<Uuid, String> = match std::fs::read_to_string(&imports_path) {
+            Ok(body) => serde_json::from_str(&body)?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+            Err(e) => return Err(e.into()),
+        };
+        imports.insert(session_id, thread_id.to_owned());
+        save_codex_map_atomically(&imports_path, &imports)?;
+    }
+    map.insert(session_id, thread_id.to_owned());
+    save_codex_map_atomically(path, &map)
+}
+
+fn save_codex_map_atomically(
+    path: &std::path::Path,
+    map: &HashMap<Uuid, String>,
+) -> anyhow::Result<()> {
+    let temp = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
+    save_sidecar_map(&temp, map)?;
+    if let Err(e) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+pub(crate) fn bind_imported_codex_thread(session_id: Uuid, thread_id: &str) -> anyhow::Result<()> {
+    update_codex_thread_map(session_id, thread_id, true)
 }
 
 fn load_codex_thread_id(session_id: Uuid) -> Option<String> {
@@ -163,9 +233,7 @@ pub(crate) fn session_id_for_codex_thread(thread_id: &str) -> Option<Uuid> {
 
 fn make_codex_thread_id_sink(session_id: Uuid) -> CodexThreadIdSink {
     std::sync::Arc::new(move |thread_id: String| {
-        let mut map = load_codex_threads();
-        map.insert(session_id, thread_id);
-        if let Err(e) = save_codex_threads(&map) {
+        if let Err(e) = update_codex_thread_map(session_id, &thread_id, false) {
             warn!(
                 "Failed to persist codex thread id for session {}: {}",
                 session_id, e
@@ -603,6 +671,13 @@ async fn run_session_task(
             config.resume,
             codex_thread_id.as_deref(),
         );
+        if config.agent_type == shared::AgentType::Codex && config.resume {
+            let imports: HashMap<Uuid, String> =
+                load_sidecar_map(&codex_threads_path().with_file_name("codex_imports.json"));
+            config.prime_portal_reminder_on_first_input |= imports.get(&config.session_id)
+                == codex_thread_id.as_ref()
+                && codex_thread_id.is_some();
+        }
 
         // The portal's established dangerous-permissions wire format is the
         // agent argument list. Consume Muse's token here and carry it as typed
@@ -1000,5 +1075,36 @@ mod tests {
             assert_eq!(policy.extra_args, vec!["--some-arg"]);
             assert_eq!(policy.reminder.as_deref(), Some("plugin skills reminder"));
         }
+    }
+}
+
+#[cfg(test)]
+mod import_binding_tests {
+    use super::*;
+
+    #[test]
+    fn binding_is_idempotent_rejects_aliases_and_preserves_other_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.json");
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        update_codex_thread_map_at(&path, first, "thread-a", true).unwrap();
+        update_codex_thread_map_at(&path, first, "thread-a", true).unwrap();
+        assert!(update_codex_thread_map_at(&path, second, "thread-a", true).is_err());
+        assert!(update_codex_thread_map_at(&path, first, "thread-b", true).is_err());
+        update_codex_thread_map_at(&path, second, "thread-b", false).unwrap();
+        let map: HashMap<Uuid, String> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(map.get(&first).unwrap(), "thread-a");
+        assert_eq!(map.get(&second).unwrap(), "thread-b");
+    }
+
+    #[test]
+    fn corrupt_map_is_reported_without_overwriting_recoverable_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("threads.json");
+        std::fs::write(&path, "broken JSON").unwrap();
+        assert!(update_codex_thread_map_at(&path, Uuid::new_v4(), "thread", true).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "broken JSON");
     }
 }

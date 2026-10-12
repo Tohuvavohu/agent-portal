@@ -122,6 +122,7 @@ pub async fn run_launcher_loop(
                         shared::LAUNCHER_CAPABILITY_CREATE_WORKTREE.to_string(),
                         shared::LAUNCHER_CAPABILITY_SCRATCH_WORKTREE.to_string(),
                         shared::LAUNCHER_CAPABILITY_FORK_SESSION.to_string(),
+                        shared::LAUNCHER_CAPABILITY_IMPORT_CODEX.to_string(),
                         shared::LAUNCHER_CAPABILITY_RESTART.to_string(),
                         shared::LAUNCHER_CAPABILITY_HEARTBEAT_ACK.to_string(),
                     ],
@@ -203,6 +204,10 @@ pub async fn run_launcher_loop(
                     }
                 }
 
+                // Background native reads return through this connection-owned
+                // queue so history copying never blocks heartbeats or controls.
+                let (import_reply_tx, mut import_reply_rx) = mpsc::channel::<LauncherToServer>(4);
+
                 // Main loop
                 let mut heartbeat_timer = tokio::time::interval(HEARTBEAT_INTERVAL);
                 // Resource readings for the dashboard's services monitor: on
@@ -249,6 +254,9 @@ pub async fn run_launcher_loop(
                     tokio::pin!(continuation_sleep);
 
                     tokio::select! {
+                        Some(reply) = import_reply_rx.recv() => {
+                            if ws_sender.send(reply).await.is_err() { break; }
+                        }
                         result = ws_receiver.recv() => {
                             match result {
                                 Some(Ok(msg)) => {
@@ -267,6 +275,7 @@ pub async fn run_launcher_loop(
                                             &mut process_manager,
                                             &mut scheduler,
                                             &mut login_registry,
+                                            &import_reply_tx,
                                         ).await;
                                     }
                                 }
@@ -660,6 +669,7 @@ async fn handle_message(
     process_manager: &mut ProcessManager,
     scheduler: &mut Scheduler,
     login_registry: &mut crate::login_registry::LoginRegistry,
+    import_reply_tx: &mpsc::Sender<LauncherToServer>,
 ) {
     match msg {
         ServerToLauncher::LaunchSession {
@@ -782,6 +792,51 @@ async fn handle_message(
         }
         ServerToLauncher::ContinuationSync { continuations } => {
             scheduler.update_continuations(continuations);
+        }
+        ServerToLauncher::ListExternalSessions {
+            request_id,
+            agent_type,
+            query,
+        } => {
+            let sender = import_reply_tx.clone();
+            tokio::spawn(async move {
+                let result = tokio::select! {
+                    _ = sender.closed() => return,
+                    result = tokio::time::timeout(std::time::Duration::from_secs(45), crate::imports::list(agent_type, query)) => result,
+                }
+                .map_err(|_| "Session discovery timed out".to_string())
+                .and_then(|r| r.map_err(|e| format!("{e:#}")));
+                if sender
+                    .send(LauncherToServer::ExternalSessionsResult { request_id, result })
+                    .await
+                    .is_err()
+                {
+                    warn!("Failed to send external sessions result");
+                }
+            });
+        }
+        ServerToLauncher::PrepareSessionImport {
+            request_id,
+            agent_type,
+            session_id,
+            request,
+        } => {
+            let sender = import_reply_tx.clone();
+            tokio::spawn(async move {
+                let result = tokio::select! {
+                    _ = sender.closed() => return,
+                    result = tokio::time::timeout(std::time::Duration::from_secs(90), crate::imports::prepare(agent_type, session_id, request)) => result,
+                }
+                    .map_err(|_| "Session import timed out. Close the original client and retry, or import without copying history.".to_string())
+                    .and_then(|r| r.map_err(|e| format!("{e:#}")));
+                if sender
+                    .send(LauncherToServer::PrepareSessionImportResult { request_id, result })
+                    .await
+                    .is_err()
+                {
+                    warn!("Failed to send session import result");
+                }
+            });
         }
         ServerToLauncher::ListDirectories { request_id, path } => {
             let response = list_directory(&path, request_id);

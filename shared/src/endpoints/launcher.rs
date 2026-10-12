@@ -109,6 +109,16 @@ pub enum LauncherToServer {
         reason: SessionExitReason,
     },
 
+    /// Native sessions on this launcher; owner-gated by the backend.
+    ExternalSessionsResult {
+        request_id: Uuid,
+        result: Result<crate::api::ExternalSessionList, String>,
+    },
+    PrepareSessionImportResult {
+        request_id: Uuid,
+        result: Result<crate::api::PreparedSessionImport, String>,
+    },
+
     /// Directory listing response
     ListDirectoriesResult {
         request_id: Uuid,
@@ -322,6 +332,18 @@ pub enum ServerToLauncher {
     /// Pause a running session without deleting the launcher's persisted
     /// expected-session metadata.
     PauseSession { session_id: Uuid },
+
+    ListExternalSessions {
+        request_id: Uuid,
+        agent_type: AgentType,
+        query: crate::api::ExternalSessionQuery,
+    },
+    PrepareSessionImport {
+        request_id: Uuid,
+        agent_type: AgentType,
+        session_id: Uuid,
+        request: crate::api::ImportSessionRequest,
+    },
 
     /// Request directory listing
     ListDirectories { request_id: Uuid, path: String },
