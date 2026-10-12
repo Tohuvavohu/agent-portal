@@ -1038,20 +1038,22 @@ impl InputBar {
             .reasoning_effort
             .map(|effort| effort.as_str())
             .unwrap_or("auto");
+        // A select has no HTML value attribute. Yew inserts options in reverse
+        // order, so leaving selection implicit can display XHigh even on Auto.
+        // Set selected on each option, as in the model picker.
         html! {
             <select
                 class="reasoning-effort-select"
                 title="Reasoning effort for the next turn"
                 aria-label="Reasoning effort"
-                value={selected}
                 {onchange}
             >
-                <option value="auto">{ "Auto" }</option>
-                <option value="minimal">{ "Minimal" }</option>
-                <option value="low">{ "Low" }</option>
-                <option value="medium">{ "Medium" }</option>
-                <option value="high">{ "High" }</option>
-                <option value="xhigh">{ "XHigh" }</option>
+                <option value="auto" selected={selected == "auto"}>{ "Auto" }</option>
+                <option value="minimal" selected={selected == "minimal"}>{ "Minimal" }</option>
+                <option value="low" selected={selected == "low"}>{ "Low" }</option>
+                <option value="medium" selected={selected == "medium"}>{ "Medium" }</option>
+                <option value="high" selected={selected == "high"}>{ "High" }</option>
+                <option value="xhigh" selected={selected == "xhigh"}>{ "XHigh" }</option>
             </select>
         }
     }
