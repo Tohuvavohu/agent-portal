@@ -1093,6 +1093,12 @@ mod import_binding_tests {
         assert!(update_codex_thread_map_at(&path, second, "thread-a", true).is_err());
         assert!(update_codex_thread_map_at(&path, first, "thread-b", true).is_err());
         update_codex_thread_map_at(&path, second, "thread-b", false).unwrap();
+        let imports: HashMap<Uuid, String> = serde_json::from_str(
+            &std::fs::read_to_string(path.with_file_name("codex_imports.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(imports.get(&first).map(String::as_str), Some("thread-a"));
+        assert!(!imports.contains_key(&second));
         let map: HashMap<Uuid, String> =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(map.get(&first).unwrap(), "thread-a");

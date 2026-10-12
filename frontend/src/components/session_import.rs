@@ -243,8 +243,8 @@ pub fn session_import(props: &Props) -> Html {
                     <input id="import-directory" value={(*directory).clone()} oninput={on_directory} disabled={*busy} placeholder="All workspaces, or an exact directory" />
                 </div>
                 <div class="launch-actions">
-                    <button type="button" onclick={let fetch = fetch.clone(); Callback::from(move |_| fetch.emit(false))} disabled={*busy}>{"Search"}</button>
-                    <button type="button" onclick={select_all} disabled={*busy || sessions.is_empty()}>{"Select listed"}</button>
+                    <button type="button" class="launch-button-cancel" onclick={let fetch = fetch.clone(); Callback::from(move |_| fetch.emit(false))} disabled={*busy}>{"Search"}</button>
+                    <button type="button" class="launch-button-cancel" onclick={select_all} disabled={*busy || sessions.is_empty()}>{"Select listed"}</button>
                 </div>
                 if let Some(e) = &*error { <p class="launch-error" role="alert">{e}</p> }
                 <div class="import-session-list" aria-busy={busy.to_string()}>
@@ -262,13 +262,13 @@ pub fn session_import(props: &Props) -> Html {
                                 <input type="checkbox" {checked} {onchange} disabled={*busy || session.portal_session_id.is_some()} />
                                 <span><strong>{&session.name}</strong><small>{&session.working_directory}</small><small>{updated}</small></span>
                             </label>
-                            if let Some(id) = session.portal_session_id { <button type="button" disabled={*busy} onclick={let open = props.on_open.clone(); Callback::from(move |_| open.emit(id))}>{"Open in Portal"}</button> }
+                            if let Some(id) = session.portal_session_id { <button type="button" class="launch-button-cancel" disabled={*busy} onclick={let open = props.on_open.clone(); Callback::from(move |_| open.emit(id))}>{"Open in Portal"}</button> }
                             if let Some(e) = failures.get(&source) { <p class="launch-error" role="alert">{e}</p> }
                         </div> }
                     }) }
                 </div>
                 if *loaded && sessions.is_empty() { <p class="launch-note">{"No saved conversations on this page. Try another search or the next page."}</p> }
-                if cursor.is_some() { <button type="button" disabled={*busy || *applied_filters != ((*search).clone(), (*directory).clone())} onclick={let fetch = fetch.clone(); Callback::from(move |_| fetch.emit(true))}>{"Load more"}</button> }
+                if cursor.is_some() { <button type="button" class="launch-button-cancel" disabled={*busy || *applied_filters != ((*search).clone(), (*directory).clone())} onclick={let fetch = fetch.clone(); Callback::from(move |_| fetch.emit(true))}>{"Load more"}</button> }
                 <div class="launch-field launch-checkbox"><label><input type="checkbox" checked={*include_history} onchange={on_history} disabled={*busy} />{" Copy conversation history"}</label></div>
                 <p class="launch-note">{"Codex keeps the full context either way. Copying history adds earlier messages to Portal; attachments remain in Codex."}</p>
                 <div class="launch-actions"><button type="button" class="launch-button" disabled={*busy || selected.is_empty()} onclick={import_selected}>

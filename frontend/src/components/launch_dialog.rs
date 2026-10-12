@@ -754,9 +754,9 @@ pub fn launch_dialog(props: &LaunchDialogProps) -> Html {
                 { launcher_select_html }
 
                 if !*show_install {
-                    <div class="launch-actions" aria-label="Session source">
-                        <button type="button" aria-pressed={(!*importing).to_string()} onclick={let importing = importing.clone(); Callback::from(move |_| importing.set(false))}>{"New session"}</button>
-                        <button type="button" aria-pressed={importing.to_string()} onclick={let importing = importing.clone(); Callback::from(move |_| importing.set(true))}>{"Import existing"}</button>
+                    <div class="launch-source-tabs" role="group" aria-label="Session source">
+                        <button type="button" class="launch-button-cancel" aria-pressed={(!*importing).to_string()} onclick={let importing = importing.clone(); Callback::from(move |_| importing.set(false))}>{"New session"}</button>
+                        <button type="button" class="launch-button-cancel" aria-pressed={importing.to_string()} onclick={let importing = importing.clone(); Callback::from(move |_| importing.set(true))}>{"Import existing"}</button>
                     </div>
                 }
 

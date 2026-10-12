@@ -310,8 +310,29 @@ mod live_tests {
     #[ignore = "requires a local Codex CLI and PORTAL_IMPORT_TEST_THREAD_ID"]
     async fn native_thread_is_readable_without_resuming() {
         let id = std::env::var("PORTAL_IMPORT_TEST_THREAD_ID").expect("select a saved test thread");
-        let snapshot = super::prepare(&id, false).await.unwrap();
+        let include_history =
+            std::env::var("PORTAL_IMPORT_TEST_COPY_HISTORY").is_ok_and(|v| v == "1");
+        let snapshot = tokio::time::timeout(
+            std::time::Duration::from_secs(90),
+            super::prepare(&id, include_history),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(snapshot.session.source_id, id);
-        assert!(snapshot.messages.is_empty());
+        if !include_history {
+            assert!(snapshot.messages.is_empty());
+        }
+        let listed = tokio::time::timeout(
+            std::time::Duration::from_secs(45),
+            super::list(shared::api::ExternalSessionQuery {
+                working_directory: Some(snapshot.session.working_directory),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!listed.sessions.is_empty());
     }
 }
