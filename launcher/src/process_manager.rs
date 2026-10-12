@@ -671,12 +671,14 @@ async fn run_session_task(
             config.resume,
             codex_thread_id.as_deref(),
         );
+        let mut codex_require_resume = false;
         if config.agent_type == shared::AgentType::Codex && config.resume {
             let imports: HashMap<Uuid, String> =
                 load_sidecar_map(&codex_threads_path().with_file_name("codex_imports.json"));
-            config.prime_portal_reminder_on_first_input |= imports.get(&config.session_id)
-                == codex_thread_id.as_ref()
-                && codex_thread_id.is_some();
+            let imported = imports.get(&config.session_id);
+            config.prime_portal_reminder_on_first_input |=
+                imported == codex_thread_id.as_ref() && codex_thread_id.is_some();
+            codex_require_resume = imported.is_some();
         }
 
         // The portal's established dangerous-permissions wire format is the
@@ -718,6 +720,7 @@ async fn run_session_task(
             muse_yolo,
             agent_type: config.agent_type,
             codex_thread_id,
+            codex_require_resume,
             fork_from_session_id: config.fork_from_session_id,
             codex_fork_from_thread_id: config.fork_from_session_id.and_then(load_codex_thread_id),
             claude_conversation_id: load_claude_conversation_id(config.session_id),

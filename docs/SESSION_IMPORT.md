@@ -49,9 +49,12 @@ The launcher thread map and additive `codex_imports.json` metadata must be backe
 up with its normal configuration. Imported contexts receive the Portal reminder
 on the first user input after resume; importing itself sends no prompt.
 
-Codex resume failures and missing mappings are explicit errors. They never
-silently replace the conversation with a new thread. The existing launcher
-failure/backoff handling still applies.
+For imported sessions (those listed in `codex_imports.json`), a failed Codex
+resume or a missing mapping is an explicit error: the launcher sets
+`SessionConfig::codex_require_resume`, so the conversation is never silently
+replaced with a new thread. The existing launcher failure/backoff handling
+still applies. Ordinary Portal-created Codex sessions keep falling back to a
+fresh thread, since their transcript lives in Portal.
 
 API: `GET /api/launchers/{id}/external-sessions/codex` accepts `search`,
 `working_directory`, and an opaque `cursor`; `POST` accepts `source_id` and

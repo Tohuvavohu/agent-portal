@@ -43,7 +43,7 @@
 <rect x="1055" y="824" width="850" height="134" rx="14" fill="#1e202e" stroke="#9ece6a" stroke-width="2"/>
 <text x="1081" y="864" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#7aa2f7">Review, close original client, Resume</text>
 <text x="1081" y="902" font-family="Arial, sans-serif" font-size="23" font-weight="normal" fill="#c0caf5">Continue the saved native conversation.</text>
-<text x="1081" y="932" font-family="Arial, sans-serif" font-size="23" font-weight="normal" fill="#c0caf5">Resume errors never silently start a new thread.</text>
+<text x="1081" y="932" font-family="Arial, sans-serif" font-size="23" font-weight="normal" fill="#c0caf5">Imported resumes never silently start a new thread.</text>
 <text x="81" y="1014" font-family="Arial, sans-serif" font-size="25" font-weight="normal" fill="#f7768e">No supported discovery or import handoff.</text>
 <text x="1081" y="1014" font-family="Arial, sans-serif" font-size="25" font-weight="normal" fill="#9ece6a">Retries reuse the session; history is never input.</text>
 <text x="55" y="1172" font-family="Arial, sans-serif" font-size="22" font-weight="normal" fill="#a9b1d6">Codex only. Same computer and files; running processes are not moved. History copying is optional and bounded.</text>

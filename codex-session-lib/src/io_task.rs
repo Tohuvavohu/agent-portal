@@ -378,18 +378,34 @@ pub(crate) async fn codex_io_task(
                     let model = started_thread_model(resp.model, &configured_model_fallback);
                     resumed_thread = Some((prior.clone(), model));
                 }
-                Err(e) => {
+                Err(e) if config.codex_require_resume => {
                     let _ = event_tx.send(IoEvent::Error(SessionError::CommunicationError(format!(
                         "Could not resume Codex conversation {prior}: {e}. No new conversation was created."
                     ))));
                     return;
                 }
+                Err(e) => {
+                    // Fall through to `thread_start`. Common failure modes: the
+                    // codex binary upgraded across a thread storage breaking
+                    // change, or the thread was archived out of band. The
+                    // portal transcript is rehydrated by the backend's replay
+                    // path independently, so the session stays usable.
+                    tracing::warn!(
+                        "Codex thread/resume of {} failed: {} — falling back to fresh thread_start",
+                        prior,
+                        e
+                    );
+                }
             }
-        } else {
+        } else if config.codex_require_resume {
             let _ = event_tx.send(IoEvent::Error(SessionError::CommunicationError(
                 "Cannot resume: the saved Codex thread mapping is missing. No new conversation was created.".into()
             )));
             return;
+        } else {
+            tracing::info!(
+                "Codex resume requested but no prior thread_id is known — starting fresh thread"
+            );
         }
     }
 
