@@ -832,11 +832,13 @@ async fn handle_message(
                 let result = if running && restore.mode == shared::api::HistoryRestoreMode::Native {
                     Err("Original conversation is still running on this host. Stop it before restoring native state.".to_string())
                 } else {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(90),
-                        crate::history_restore::check(agent_type, &working_directory, &restore),
-                    )
-                    .await
+                    tokio::select! {
+                        _ = sender.closed() => return,
+                        result = tokio::time::timeout(
+                            std::time::Duration::from_secs(90),
+                            crate::history_restore::check(agent_type, &working_directory, &restore),
+                        ) => result,
+                    }
                     .map_err(|_| {
                         "Restore check timed out; reconnect the host and retry".to_string()
                     })

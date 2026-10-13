@@ -488,20 +488,6 @@ impl ProcessManager {
                 if has_native {
                     resume = true;
                 } else {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(90),
-                        crate::history_restore::check(
-                            params.agent_type,
-                            &working_directory,
-                            restore,
-                        ),
-                    )
-                    .await
-                    .map_err(|_| {
-                        anyhow::anyhow!(
-                            "Native restore check timed out; retry when the host is ready"
-                        )
-                    })??;
                     resume = false;
                     params.fork_from_session_id = Some(restore.source_session_id);
                 }
@@ -645,6 +631,33 @@ async fn run_session_task(
     cancel: CancellationToken,
     live_id: &LiveSessionId,
 ) -> TaskOutcome {
+    // A native-state probe can start a temporary app-server. Keep it inside
+    // the per-session task so slow probes never stall launcher heartbeats or
+    // other sessions, and a pause can cancel a pending probe immediately.
+    if let Some(restore) = config
+        .history_restore
+        .as_ref()
+        .filter(|r| r.mode == shared::api::HistoryRestoreMode::Native && !config.resume)
+    {
+        let result = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return TaskOutcome {
+                exit_code: Some(0),
+                reason: SessionExitReason::Stopped,
+            },
+            result = tokio::time::timeout(
+                std::time::Duration::from_secs(90),
+                crate::history_restore::check(config.agent_type, &config.working_directory, restore),
+            ) => result.map_err(|_| anyhow::anyhow!("Native restore check timed out")).and_then(|r| r),
+        };
+        if let Err(error) = result {
+            error!("Native restore preflight failed: {error:#}");
+            return TaskOutcome {
+                exit_code: Some(1),
+                reason: SessionExitReason::ResumeTargetMissing,
+            };
+        }
+    }
     loop {
         // Pre-flight: if we're about to `claude --resume <id>` but the local
         // transcript is gone, claude exits near-instantly and reconcile would
