@@ -62,6 +62,16 @@ pub fn load_policy(conn: &mut PgConnection) -> Result<FederationPolicy, AppError
 }
 
 fn validate_row(conn: &mut PgConnection, token: &ProxyAuthToken) -> Result<LinkedAuth, AppError> {
+    validate_row_for_refresh(conn, token, false)
+}
+
+// Expiry recovery is exclusive to atomic refresh; revoked/rotated credentials,
+// expired grants, disabled users and current policy are always enforced.
+fn validate_row_for_refresh(
+    conn: &mut PgConnection,
+    token: &ProxyAuthToken,
+    refresh: bool,
+) -> Result<LinkedAuth, AppError> {
     let now = chrono::Utc::now().naive_utc();
     let scope = token
         .scope
@@ -69,7 +79,11 @@ fn validate_row(conn: &mut PgConnection, token: &ProxyAuthToken) -> Result<Linke
         .and_then(TokenScope::parse)
         .ok_or(AppError::Unauthorized)?;
     let grant_id = token.linked_grant_id.ok_or(AppError::Unauthorized)?;
-    if token.revoked || token.expires_at.is_none_or(|expiry| expiry <= now) {
+    if token.revoked
+        || token
+            .expires_at
+            .is_none_or(|expiry| !refresh && expiry <= now)
+    {
         return Err(AppError::Unauthorized);
     }
     let grant = linked_client_grants::table
@@ -100,10 +114,20 @@ fn validate_row(conn: &mut PgConnection, token: &ProxyAuthToken) -> Result<Linke
 }
 
 pub fn authenticate(
+    state: &AppState,
+    conn: &mut PgConnection,
+    bearer: &str,
+    headers: &HeaderMap,
+) -> Result<LinkedAuth, AppError> {
+    authenticate_for_refresh(state, conn, bearer, headers, false)
+}
+
+fn authenticate_for_refresh(
     _state: &AppState,
     conn: &mut PgConnection,
     bearer: &str,
     headers: &HeaderMap,
+    refresh: bool,
 ) -> Result<LinkedAuth, AppError> {
     if !bearer.starts_with(LINKED_TOKEN_PREFIX) {
         return Err(AppError::Unauthorized);
@@ -113,7 +137,7 @@ pub fn authenticate(
         .first::<ProxyAuthToken>(conn)
         .optional()?
         .ok_or(AppError::Unauthorized)?;
-    let auth = validate_row(conn, &token)?;
+    let auth = validate_row_for_refresh(conn, &token, refresh)?;
     // Origin constrains browsers, not native-client attestation. Requiring it
     // also prevents accidental credential use without an explicit connection.
     let origin = headers
@@ -184,6 +208,9 @@ fn route_scope(method: &Method, route: &str) -> Option<TokenScope> {
             "PATCH" | "DELETE",
             "/api/sessions/{id}/edit-stack/{item_id}" | "/api/scheduled-tasks/{id}",
         ) => Some(Write),
+        ("POST", "/api/linked-grants/refresh") | ("DELETE", "/api/linked-grants/{id}") => {
+            Some(Read)
+        }
         ("DELETE", "/api/sessions/{id}" | "/api/sessions/{id}/forwards") => Some(Write),
         // WS bearer upgrades deliberately remain disabled until one-use tickets
         // land. No enrollment or credential-minting routes are enabled here.
@@ -237,7 +264,9 @@ pub async fn linked_scope_gate(
             .map(|p| p.as_str())
             .unwrap_or("");
         let required = route_scope(req.method(), route).ok_or(AppError::Forbidden)?;
-        let auth = authenticate(&state, &mut *state.conn()?, bearer, req.headers())?;
+        let refresh = req.method() == Method::POST && route == "/api/linked-grants/refresh";
+        let auth =
+            authenticate_for_refresh(&state, &mut *state.conn()?, bearer, req.headers(), refresh)?;
         if !auth.scope.permits(required) {
             return Err(AppError::Forbidden);
         }
@@ -280,3 +309,6 @@ pub mod policy;
 
 #[cfg(test)]
 static TEST_POLICY_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+pub mod credentials;
+pub mod enrollment;
