@@ -23,13 +23,50 @@ use crate::handlers::websocket::{LauncherRpcError, LauncherRpcKind, SessionManag
 use crate::models::jsonb_string_vec;
 use crate::AppState;
 
-/// GET /api/launchers - List connected launchers for the current user
+/// GET /api/launchers - List connected launchers for the current user, each
+/// with how many of its running sessions are mid-turn.
 pub async fn list_launchers(
     State(app_state): State<Arc<AppState>>,
     CurrentUserId(user_id): CurrentUserId,
 ) -> Result<Json<Vec<LauncherInfo>>, AppError> {
-    let launchers = app_state.session_manager.get_launchers_for_user(&user_id);
+    let mut launchers = app_state.session_manager.get_launchers_for_user(&user_id);
+    let running: Vec<Vec<Uuid>> = launchers
+        .iter()
+        .map(|l| {
+            app_state
+                .session_manager
+                .launcher_running_sessions(l.launcher_id)
+        })
+        .collect();
+    let all: Vec<Uuid> = running.iter().flatten().copied().collect();
+    if !all.is_empty() {
+        let mut conn = app_state.conn()?;
+        let states =
+            crate::handlers::agent_comms::session_activity_states(&app_state, &mut conn, &all)?;
+        fill_active_counts(&mut launchers, &running, &states);
+    }
     Ok(Json(launchers))
+}
+
+/// Set each launcher's `active_sessions` from its running session ids
+/// (`running[i]` belongs to `launchers[i]`). A session with no known state —
+/// not yet in the transcript — counts as not active.
+fn fill_active_counts(
+    launchers: &mut [LauncherInfo],
+    running: &[Vec<Uuid>],
+    states: &std::collections::HashMap<Uuid, shared::api::SessionActivityState>,
+) {
+    for (launcher, ids) in launchers.iter_mut().zip(running) {
+        launcher.active_sessions = ids
+            .iter()
+            .filter(|id| {
+                states
+                    .get(id)
+                    .copied()
+                    .is_some_and(shared::api::SessionActivityState::is_active)
+            })
+            .count() as u32;
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -745,6 +782,41 @@ pub async fn install_agent(
 mod tests {
     use super::*;
     use crate::handlers::websocket::LauncherConnection;
+
+    fn info(running_sessions: u32) -> LauncherInfo {
+        LauncherInfo {
+            launcher_id: Uuid::new_v4(),
+            launcher_name: "l".into(),
+            hostname: "h".into(),
+            connected: true,
+            running_sessions,
+            active_sessions: 0,
+            working_directory: None,
+            version: String::new(),
+            capabilities: vec![],
+        }
+    }
+
+    /// Each launcher counts only its own sessions that are busy or throttled;
+    /// idle sessions and ones with no known state don't count.
+    #[test]
+    fn active_counts_are_per_launcher_and_only_mid_turn() {
+        use shared::api::SessionActivityState::{Busy, Idle, Throttled};
+        let ids: Vec<Uuid> = (0..6).map(|_| Uuid::new_v4()).collect();
+        let states = std::collections::HashMap::from([
+            (ids[0], Busy),
+            (ids[1], Idle),
+            (ids[2], Throttled),
+            (ids[3], Busy),
+            (ids[4], Idle),
+            // ids[5]: no transcript yet, so no state.
+        ]);
+        let mut launchers = vec![info(3), info(3)];
+        let running = vec![ids[0..3].to_vec(), ids[3..6].to_vec()];
+        fill_active_counts(&mut launchers, &running, &states);
+        assert_eq!(launchers[0].active_sessions, 2, "busy + throttled");
+        assert_eq!(launchers[1].active_sessions, 1, "busy only");
+    }
 
     fn launcher_for(user_id: Uuid, hostname: &str) -> LauncherConnection {
         let (sender, _rx) = crate::handlers::websocket::conn_channel(64);
