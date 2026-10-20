@@ -348,6 +348,7 @@ diesel::table! {
         fork_launch_pending -> Bool,
         fork_create_worktree -> Bool,
         last_messaged_at -> Timestamp,
+        history_restore -> Nullable<Jsonb>,
     }
 }
 

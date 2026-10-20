@@ -197,6 +197,7 @@ jobs:
           cargo test -p backend --lib handlers::websocket::replay::replay_tests
           cargo test -p backend --lib db::session_lifecycle::tests
           cargo test -p backend --lib handlers::session_imports::tests
+          cargo test -p backend --test history_api
 
   build-binaries:
     name: ${{ matrix.job-name }}
