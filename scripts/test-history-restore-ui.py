@@ -47,7 +47,11 @@ async def main():
 
     async def api(route):
         path = urlparse(route.request.url).path
-        if path == "/api/history/sessions":
+        if path == "/api/auth/me":
+            data = dict(id=USER, email="history-test@example.invalid")
+        elif path == "/api/portal-connections":
+            data = dict(connections=[])
+        elif path == "/api/history/sessions":
             data = dict(sessions=[manifest], is_admin=False, total=1)
         elif path.endswith("/manifest"):
             data = manifest
@@ -77,7 +81,12 @@ async def main():
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             await page.goto(f"{base}/history")
-            await page.get_by_role("link", name=manifest["session_name"]).click()
+            try:
+                await page.get_by_role("link", name=manifest["session_name"]).click()
+            except Exception:
+                print("Page errors:", errors, flush=True)
+                print("Page text:", await page.locator("body").inner_text(), flush=True)
+                raise
             await page.get_by_role("button", name="Restore from History", exact=True).click()
             await expect(page.get_by_label("Recovery method")).to_have_value("native")
             assert await page.locator(".history-restore").evaluate("el => parseFloat(getComputedStyle(el).paddingLeft) > 0"), "History stylesheet must load"

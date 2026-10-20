@@ -200,7 +200,7 @@ pub struct HistoryMessageLine {
     pub content: serde_json::Value,
 }
 
-/// `POST /api/history/sessions/{user}/{session}/recovery` response.
+/// Legacy bodyless `POST /api/history/sessions/{user}/{session}/restore` response.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RestoreSessionResponse {
     /// The Portal session to open: the restored copy, or the original when it
