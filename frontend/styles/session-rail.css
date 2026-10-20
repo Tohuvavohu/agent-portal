@@ -271,17 +271,7 @@
 .pill-watermark.codex  { background-image: url('/openai-mark.png'); }
 
 .pill-watermark.antigravity {
-    color: #bb9af7;
-    display: grid;
-    font-family: monospace;
-    font-size: 46px;
-    font-weight: 700;
-    line-height: 1;
-    place-items: center;
-}
-
-.pill-watermark.antigravity::before {
-    content: "A";
+    background-image: url('/antigravity-mark.svg');
 }
 
 /* Muse watermark 30% larger (64×1.3 = 83.2) — recentered so horizontal center stays at x=16 (left = 16 - 83.2/2 = -25.6) */

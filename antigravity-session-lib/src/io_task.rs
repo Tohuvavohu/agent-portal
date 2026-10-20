@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use antigravity_codes::protocol::{
     CallHookResponse, EmptyResult, InputEvent, OutputEventEvent, PolicyConfig,
@@ -30,6 +30,7 @@ struct PendingInput {
 enum TurnResult {
     Complete { queued: VecDeque<PendingInput> },
     Shutdown { completed: oneshot::Sender<()> },
+    Closed,
 }
 
 pub async fn antigravity_io_task(
@@ -96,6 +97,7 @@ pub async fn antigravity_io_task(
             } => {
                 append_after_existing(&mut queued, &mut newly_queued);
             }
+            TurnResult::Closed => break,
             TurnResult::Shutdown { completed } => {
                 let _ = completed.send(());
                 break;
@@ -132,10 +134,13 @@ async fn run_turn(
         }
     };
 
-    let cascade_id = client
-        .cascade_id()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| config.session_id.to_string());
+    let cascade_id = config.session_id.to_string();
+    if let Err(message) = validate_cascade_id(&cascade_id, client.cascade_id()) {
+        fail_delivery(pending.delivered, &message);
+        emit_error(event_tx, message);
+        shutdown_client(client, event_tx).await;
+        return TurnResult::Complete { queued };
+    }
     let mut assembler = StepAssembler::new(Some(cascade_id.clone()));
     warm_assembler(&mut assembler, &client);
 
@@ -143,7 +148,7 @@ async fn run_turn(
         let message = format!("Antigravity input failed: {e}");
         fail_delivery(pending.delivered, &message);
         emit_error(event_tx, message);
-        let _ = client.shutdown().await;
+        shutdown_client(client, event_tx).await;
         return TurnResult::Complete { queued };
     }
 
@@ -179,12 +184,12 @@ async fn run_turn(
                     }
                     Some(IoCommand::Shutdown { completed }) => {
                         let _ = client.send(&InputEvent::halt()).await;
-                        let _ = client.shutdown().await;
+                        shutdown_client(client, event_tx).await;
                         return TurnResult::Shutdown { completed };
                     }
                     None => {
-                        let _ = client.shutdown().await;
-                        return TurnResult::Complete { queued };
+                        shutdown_client(client, event_tx).await;
+                        return TurnResult::Closed;
                     }
                 }
             }
@@ -293,7 +298,10 @@ async fn run_turn(
         }
     }
 
-    let _ = client.shutdown().await;
+    if !shutdown_client(client, event_tx).await {
+        is_error = true;
+        stop_reason = Some("shutdown_error".into());
+    }
     finalize_turn_metrics(
         turn_tracker,
         &model,
@@ -313,6 +321,42 @@ async fn run_turn(
     );
 
     TurnResult::Complete { queued }
+}
+
+fn validate_cascade_id(expected: &str, actual: Option<&str>) -> Result<(), String> {
+    if actual == Some(expected) {
+        Ok(())
+    } else {
+        Err(
+            "Antigravity returned a missing or different conversation id; input was not sent"
+                .into(),
+        )
+    }
+}
+
+// Leave room inside the agent's eight-second graceful-stop deadline. A stuck
+// harness must not prevent shutdown or make a failed flush look successful.
+async fn bounded_shutdown<F, E>(future: F, timeout: Duration) -> Result<(), String>
+where
+    F: std::future::Future<Output = Result<(), E>>,
+    E: std::fmt::Display,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(result) => result.map_err(|error| format!("Antigravity shutdown failed: {error}")),
+        Err(_) => {
+            Err("Antigravity shutdown timed out; conversation persistence is unconfirmed".into())
+        }
+    }
+}
+
+async fn shutdown_client(client: RawClient, event_tx: &mpsc::UnboundedSender<IoEvent>) -> bool {
+    match bounded_shutdown(client.shutdown(), Duration::from_secs(5)).await {
+        Ok(()) => true,
+        Err(message) => {
+            emit_error(event_tx, message);
+            false
+        }
+    }
 }
 
 fn append_after_existing(
@@ -629,6 +673,35 @@ fn i64_from_u64(value: Option<u64>) -> i64 {
 mod tests {
     use super::*;
     use antigravity_codes::protocol::{InitializeConversationResponse, StepUpdateState};
+
+    #[test]
+    fn cascade_identity_must_match_before_sending_input() {
+        assert!(validate_cascade_id("expected", Some("expected")).is_ok());
+        assert!(validate_cascade_id("expected", Some("other")).is_err());
+        assert!(validate_cascade_id("expected", None).is_err());
+    }
+
+    #[tokio::test]
+    async fn shutdown_reports_failures_and_bounds_a_stalled_harness() {
+        assert!(
+            bounded_shutdown(async { Ok::<_, String>(()) }, Duration::from_secs(1))
+                .await
+                .is_ok()
+        );
+        assert!(bounded_shutdown(
+            async { Err::<(), _>("flush failed") },
+            Duration::from_secs(1)
+        )
+        .await
+        .unwrap_err()
+        .contains("flush failed"));
+        assert!(
+            bounded_shutdown(std::future::pending::<Result<(), String>>(), Duration::ZERO)
+                .await
+                .unwrap_err()
+                .contains("timed out")
+        );
+    }
 
     #[test]
     fn model_arg_accepts_space_and_equals_forms() {
