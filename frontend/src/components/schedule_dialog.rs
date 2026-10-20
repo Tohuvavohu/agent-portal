@@ -816,7 +816,7 @@ fn native_schedule_dialog(props: &ScheduleDialogProps) -> Html {
                             <span class="sched-host">{ "Choose where and how this task runs." }</span>
                         </div>
                     </div>
-                    <button class="sched-close" onclick={close_form.reform(|_: MouseEvent| ())}>{ "X" }</button>
+                    <button class="sched-close" aria-label="Close" onclick={close_form.reform(|_: MouseEvent| ())}>{ "X" }</button>
                 </div>
                 <div class="sched-body sched-editor-body">
                     if let Some(err) = &*error_msg {
@@ -957,7 +957,13 @@ fn native_schedule_dialog(props: &ScheduleDialogProps) -> Html {
                             if !working_directory.is_empty() { <code class="sched-dir">{ &working_directory }</code> }
                         </div>
                     </div>
-                    <button class="sched-close" onclick={props.on_close.reform(|_| ())}>{ "X" }</button>
+                    <button
+                        class="sched-close"
+                        onclick={props.on_close.reform(|_| ())}
+                        aria-label="Close"
+                    >
+                        { "X" }
+                    </button>
                 </div>
                 if *loading {
                     <div class="sched-loading"><div class="spinner"></div></div>
