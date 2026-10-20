@@ -197,7 +197,7 @@ fn recent_within_limits(lines: Vec<ArchiveMessageLine>) -> (Vec<ArchiveMessageLi
 
 /// Stored message content is JSON text; the archive embeds it as a value (a
 /// bare string when the original was not JSON).
-fn stored_content(content: serde_json::Value) -> String {
+pub(super) fn stored_content(content: serde_json::Value) -> String {
     match content {
         serde_json::Value::String(text) => text,
         other => other.to_string(),

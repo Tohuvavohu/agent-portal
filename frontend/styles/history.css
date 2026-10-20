@@ -156,42 +156,6 @@
     font-size: 0.78rem;
 }
 
-/* --- Restore control (owner-only, under the manifest card) --- */
-.history-root .history-restore {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-    margin: -0.75rem 0 1.5rem;
-}
-
-.history-root .history-restore-button {
-    background: var(--accent, #7aa2f7);
-    color: var(--bg-darker, #16161e);
-    border: 0;
-    border-radius: 6px;
-    padding: 0.4rem 0.9rem;
-    font: inherit;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.history-root .history-restore-button:disabled {
-    opacity: 0.6;
-    cursor: progress;
-}
-
-.history-root .history-restore-note {
-    color: var(--text-dim, #7f849c);
-    font-size: 0.82rem;
-}
-
-.history-root .history-restore-error {
-    color: var(--error, #f7768e);
-    font-size: 0.82rem;
-}
-
 /* --- Manifest header card --- */
 .history-root .history-manifest-card {
     background: var(--bg-darker, #16161e);
@@ -315,4 +279,48 @@
 
 .history-owner-filter:hover {
     text-decoration: underline;
+}
+
+.history-root .history-restore {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--border, #292e42);
+    border-radius: 8px;
+    background: var(--bg-darker, #16161e);
+}
+
+.history-root .history-restore p {
+    margin: 0.65rem 0;
+    line-height: 1.45;
+}
+
+.history-root .history-restore-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 1rem;
+}
+
+.history-root .history-restore-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.history-root .history-restore-fields input,
+.history-root .history-restore-fields select {
+    padding: 0.5rem;
+    color: var(--text, #c0caf5);
+    background: var(--bg-dark, #1a1b26);
+    border: 1px solid var(--border, #292e42);
+    border-radius: 4px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.history-root .history-restore-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
 }

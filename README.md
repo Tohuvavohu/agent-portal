@@ -76,7 +76,9 @@ Open **http://localhost:3000/** — dev mode logs you in as
 - **Rename sessions.** Owners and editors can change a session's display name
   from its title or session menu, including while it is paused.
 - **History.** Finished sessions stay browsable and searchable as an overlay,
-  including transcripts restored from long-term archive.
+  including transcripts restored from long-term archive. Open a conversation
+  to restore saved native state or recover from archived context; see
+  [Restore from History](docs/HISTORY_RESTORE.md).
 
 <img src="docs/media/feature-desktop-phone.webp" width="900"
      alt="The same session open on a desktop and a phone at once. The question is typed on the phone; it appears on the desktop immediately and both panes stream the agent's answer in step.">
