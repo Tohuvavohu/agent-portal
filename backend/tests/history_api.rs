@@ -699,6 +699,32 @@ async fn restore_after_deletion_is_atomic_retry_safe_and_preserves_archive() {
     let id = restore_response(first).await;
     assert_eq!(restore_response(second).await, id);
     assert_ne!(id, f.own_session);
+    // Older clients still POST the bodyless endpoint. A recovery created by
+    // the new form must be reopened there, not duplicated or relaunched.
+    let legacy = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/history/sessions/{}/{}/restore",
+            f.owner_id, f.own_session
+        ))
+        .header(header::AUTHORIZATION, &f.owner_auth)
+        .body(Body::empty())
+        .unwrap();
+    let legacy = backend::routes::build_router(f.state.clone())
+        .unwrap()
+        .oneshot(legacy)
+        .await
+        .unwrap();
+    assert_eq!(legacy.status(), StatusCode::OK);
+    let legacy: shared::api::RestoreSessionResponse = serde_json::from_slice(
+        &axum::body::to_bytes(legacy.into_body(), usize::MAX)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(legacy.session_id, id);
+    assert!(legacy.already_restored);
+
     assert_eq!(
         id,
         shared::api::restored_session_id(f.owner_id, f.own_session)
