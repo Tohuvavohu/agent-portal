@@ -44,6 +44,7 @@ const FWD_COOKIE: &str = "portal_fwd";
 const AUD_HANDOFF: &str = "portal-forward-auth";
 const AUD_COOKIE: &str = "portal-forward-session";
 const FORWARD_EDIT_STACK_PATH: &str = "/__portal/edit-stack";
+const FORWARD_STT_PATH: &str = "/__portal/stt/transcribe";
 const MAX_FORWARD_EDIT_STACK_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 /// Hop-by-hop headers (RFC 9110 §7.6.1) — never forwarded in either
@@ -266,6 +267,7 @@ pub async fn forward_host_gate(
 /// its live port (both may 404) before auth + reverse proxy.
 async fn dispatch(app_state: Arc<AppState>, label: String, req: Request) -> Response {
     let is_edit_stack_request = req.uri().path() == FORWARD_EDIT_STACK_PATH;
+    let is_stt_request = req.uri().path() == FORWARD_STT_PATH;
     // Resolve label → session up front. An unknown label is a 404 (no leak of
     // whether the label ever existed).
     let (session_id, port, session_key, cookie_claims) = {
@@ -323,6 +325,9 @@ async fn dispatch(app_state: Arc<AppState>, label: String, req: Request) -> Resp
     if is_edit_stack_request {
         return handle_forward_edit_stack(&app_state, &session_key, session_id, cookie_claims, req)
             .await;
+    }
+    if is_stt_request {
+        return handle_forward_stt(&app_state, session_id, cookie_claims, req).await;
     }
 
     proxy_request(&app_state, &session_key, session_id, port, &label, req).await
@@ -410,6 +415,84 @@ async fn handle_forward_edit_stack(
         Ok(response) => Json(response).into_response(),
         Err(err) => err.into_response(),
     }
+}
+
+/// `POST /__portal/stt/transcribe[?language=…]` — the portal-origin
+/// `/api/stt/transcribe` for forwarded surfaces, so a plugin pane can turn a
+/// voice note into text without a portal session cookie of its own.
+///
+/// Same gate as the edit stack: the `portal_fwd` cookie names the user. The
+/// forward's own session supplies the vocabulary hints, so there is no
+/// `session_id` parameter. The body is the raw recording with an `audio/*`
+/// Content-Type and the reply is `{"text": …}`. Errors mirror the portal
+/// route: 401 stale cookie, 405, 413 over `max_audio_mb`, 400 for a bad
+/// Content-Type or empty body, 503 without a provider, 502 provider failure.
+async fn handle_forward_stt(
+    app_state: &AppState,
+    session_id: Uuid,
+    claims: Option<ForwardClaims>,
+    req: Request,
+) -> Response {
+    if req.method() != Method::POST {
+        return (StatusCode::METHOD_NOT_ALLOWED, "Method not allowed").into_response();
+    }
+    let Some(user_id) = claims.map(|claims| claims.user_id) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Forward session expired; reopen this forward from Portal",
+        )
+            .into_response();
+    };
+    // A public forward is not permission to spend the portal's STT budget.
+    // Cookies can outlive sharing changes, so recheck current membership.
+    let access = app_state.conn().and_then(|mut conn| {
+        crate::handlers::session_access::verify_session_reader(&mut conn, session_id, user_id)
+    });
+    if let Err(error) = access {
+        return error.into_response();
+    }
+    let language = stt_language(req.uri());
+    let (parts, body) = req.into_parts();
+    let cap = app_state.max_audio_mb as usize * 1024 * 1024;
+    let bytes = match body::to_bytes(body, cap).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return AppError::PayloadTooLarge(format!(
+                "recording exceeded the {} MB limit for audio",
+                app_state.max_audio_mb
+            ))
+            .into_response();
+        }
+    };
+    match crate::handlers::stt::transcribe_audio(
+        app_state,
+        user_id,
+        Some(session_id),
+        language.as_deref(),
+        &parts.headers,
+        bytes,
+    )
+    .await
+    {
+        Ok(response) => Json(response).into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+/// The optional BCP-47 `language` query parameter of an STT request; other
+/// parameters are ignored rather than rejected so older and newer clients
+/// can disagree harmlessly.
+fn stt_language(uri: &Uri) -> Option<String> {
+    uri.query()?.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        if key != "language" {
+            return None;
+        }
+        urlencoding::decode(value)
+            .ok()
+            .map(|v| v.into_owned())
+            .filter(|v| !v.is_empty())
+    })
 }
 
 fn create_and_send_forward_edit_stack(
@@ -945,6 +1028,24 @@ pub fn rewrite_upstream_location(location: &str, port: u16, origin: &str) -> Str
 mod tests {
     use super::*;
 
+    #[test]
+    fn stt_language_reads_only_the_language_parameter() {
+        let uri: Uri = "/__portal/stt/transcribe?language=en-US".parse().unwrap();
+        assert_eq!(stt_language(&uri).as_deref(), Some("en-US"));
+        let uri: Uri = "/__portal/stt/transcribe?session_id=abc&language=fr%2DFR"
+            .parse()
+            .unwrap();
+        assert_eq!(stt_language(&uri).as_deref(), Some("fr-FR"));
+    }
+
+    #[test]
+    fn stt_language_is_optional() {
+        for query in ["", "?", "?language=", "?session_id=abc", "?lang=en"] {
+            let uri: Uri = format!("/__portal/stt/transcribe{query}").parse().unwrap();
+            assert_eq!(stt_language(&uri), None, "{query}");
+        }
+    }
+
     // A valid 8-lowercase-hex subdomain label.
     const LABEL: &str = "a3f9c2e1";
 
@@ -1183,6 +1284,126 @@ mod tests {
         assert_eq!(
             rewrite_upstream_location("http://localhost:80801/x", 8080, origin),
             "http://localhost:80801/x"
+        );
+    }
+}
+
+#[cfg(test)]
+mod stt_access_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn transcription_requires_current_membership_and_bounds_audio() {
+        let Some(pool) = crate::test_support::shared_pool() else {
+            return;
+        };
+        let mut state = crate::test_support::test_app_state(pool);
+        let (owner, stranger, session) = {
+            let mut conn = state.conn().expect("test connection");
+            let owner = crate::test_support::insert_user(&mut conn, "stt-owner");
+            let stranger = crate::test_support::insert_user(&mut conn, "stt-stranger");
+            let session = crate::test_support::insert_session(&mut conn, owner.id, "stt-forward");
+            diesel::insert_into(crate::schema::session_members::table)
+                .values(crate::models::NewSessionMember {
+                    session_id: session.id,
+                    user_id: owner.id,
+                    role: "owner".into(),
+                })
+                .execute(&mut conn)
+                .expect("membership");
+            (owner, stranger, session)
+        };
+        let claims = |user| {
+            decode_token(
+                &state,
+                &mint_token(&state, AUD_COOKIE, session.id, user, 60),
+                AUD_COOKIE,
+                session.id,
+            )
+        };
+        let request = |method: Method| {
+            Request::builder()
+                .method(method)
+                .uri("/__portal/stt/transcribe?session_id=ignored&language=en")
+                .header(header::CONTENT_TYPE, "audio/webm")
+                .body(Body::from("audio"))
+                .expect("request")
+        };
+        assert_eq!(
+            handle_forward_stt(&state, session.id, None, request(Method::GET))
+                .await
+                .status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            handle_forward_stt(&state, session.id, None, request(Method::POST))
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            handle_forward_stt(
+                &state,
+                session.id,
+                claims(stranger.id),
+                request(Method::POST)
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            handle_forward_stt(&state, session.id, claims(owner.id), request(Method::POST))
+                .await
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        let token = mint_token(&state, AUD_COOKIE, session.id, owner.id, 60);
+        // A cookie remains cryptographically valid after membership is revoked.
+        {
+            use crate::schema::session_members;
+            diesel::delete(
+                session_members::table.filter(session_members::session_id.eq(session.id)),
+            )
+            .execute(&mut *state.conn().expect("test connection"))
+            .expect("revoke");
+        }
+        assert_eq!(
+            handle_forward_stt(
+                &state,
+                session.id,
+                decode_token(&state, &token, AUD_COOKIE, session.id),
+                request(Method::POST)
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        let session2 = crate::test_support::insert_session(
+            &mut state.conn().expect("connection"),
+            owner.id,
+            "stt-cap",
+        );
+        diesel::insert_into(crate::schema::session_members::table)
+            .values(crate::models::NewSessionMember {
+                session_id: session2.id,
+                user_id: owner.id,
+                role: "owner".into(),
+            })
+            .execute(&mut *state.conn().expect("connection"))
+            .expect("membership");
+        state.max_audio_mb = 0;
+        let token = mint_token(&state, AUD_COOKIE, session2.id, owner.id, 60);
+        assert_eq!(
+            handle_forward_stt(
+                &state,
+                session2.id,
+                decode_token(&state, &token, AUD_COOKIE, session2.id),
+                request(Method::POST)
+            )
+            .await
+            .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
         );
     }
 }
