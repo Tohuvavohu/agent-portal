@@ -52,5 +52,7 @@ pub use rename_session::{RenameSessionDialog, SessionName};
 pub use schedule_dialog::ScheduleDialog;
 pub use service_monitor::ServiceMonitor;
 pub use share_dialog::ShareDialog;
-pub use upload_notice::{build_upload_message, split_upload_notice, UploadNotice};
+pub use upload_notice::{
+    build_upload_message, split_upload_notice, uploaded_image_media_type, UploadNotice,
+};
 pub use voice_input::{load_voice_hold_open, save_voice_hold_open, VoiceInput};

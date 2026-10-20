@@ -10,7 +10,15 @@ use yew::prelude::*;
 
 pub(crate) fn protected_path(origin: &str, reference: &str) -> Option<String> {
     let path = reference.strip_prefix(origin).unwrap_or(reference);
-    (path.starts_with("/api/images/") || path.starts_with("/api/media/")).then(|| path.to_string())
+    let endpoint = path.split('?').next().unwrap_or(path);
+    let session_file = endpoint
+        .strip_prefix("/api/sessions/")
+        .and_then(|rest| rest.strip_suffix("/files/pull"))
+        .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok());
+    // Attachment previews are protected file downloads too. Resolve them
+    // through this portal's bearer rather than a cross-origin image cookie.
+    (path.starts_with("/api/images/") || path.starts_with("/api/media/") || session_file)
+        .then(|| path.to_string())
 }
 
 #[hook]
@@ -79,6 +87,26 @@ pub fn use_media_url(reference: &str) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn attachment_previews_use_only_the_owning_portals_file_endpoint() {
+        let origin = "https://portal.example";
+        let path =
+            "/api/sessions/00000000-0000-4000-8000-000000000001/files/pull?path=photo%20one.png";
+        assert_eq!(protected_path(origin, path), Some(path.into()));
+        assert_eq!(
+            protected_path(origin, &format!("{origin}{path}")),
+            Some(path.into())
+        );
+        for bad in [
+            format!("https://evil.example{path}"),
+            format!("//evil.example{path}"),
+            "/api/sessions/not-an-id/files/pull?path=x.png".into(),
+            "/api/sessions/00000000-0000-4000-8000-000000000001/files/push".into(),
+        ] {
+            assert_eq!(protected_path(origin, &bad), None);
+        }
+    }
+
     #[test]
     fn media_credentials_never_follow_foreign_references() {
         let origin = "https://portal.example";
