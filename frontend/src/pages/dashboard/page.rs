@@ -1025,6 +1025,7 @@ pub fn dashboard_page() -> Html {
                         </div>
                     } else {
                     <SessionRail
+                        on_renamed={sessions_hook.refresh.clone()}
                         sessions={active_sessions.clone()}
                         focused_index={focus.focused_index}
                         awaiting_sessions={effective_awaiting.clone()}
@@ -1072,6 +1073,7 @@ pub fn dashboard_page() -> Html {
                                             class={classes!("session-view-wrapper", if is_focused { "focused" } else { "hidden" })}
                                         >
                                             <SessionView
+                                                on_renamed={sessions_hook.refresh.clone()}
                                                 session={session.info.clone()}
                                                 portal={session.portal.clone()}
                                                 focused={is_focused}
