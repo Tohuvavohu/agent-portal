@@ -2,12 +2,21 @@
 
 use std::collections::BTreeMap;
 
-use shared::api::{ScheduledTaskOccurrence, UpcomingScheduledTasksResponse};
+use futures_util::future::join_all;
+use shared::api::{
+    ScheduledTaskInfo, ScheduledTaskListResponse, ScheduledTaskOccurrence, ScheduledTaskRun,
+    ScheduledTaskRunsResponse, UpcomingScheduledTasksResponse,
+};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+use yew_router::prelude::Link;
 
 use crate::components::ScheduleDialog;
 use crate::utils::{self, On401};
+use crate::Route;
+
+/// Runs shown per task; the endpoint returns up to 50.
+const RUNS_PER_TASK: usize = 10;
 
 const WEEKDAYS: [&str; 7] = [
     "Sunday",
@@ -62,6 +71,122 @@ fn calendar_days(data: &UpcomingScheduledTasksResponse) -> Vec<(String, String)>
         cursor.set_date(cursor.get_date() + 1);
     }
     days
+}
+
+fn run_link(run: &ScheduledTaskRun) -> Html {
+    let started = local_date(&run.started_at);
+    let label = format!("{} · {}", day_label(&started), time_label(&run.started_at));
+    // Runs have no rail pill, so this is the way back to them: the archived
+    // transcript once the sweep has it, the live dashboard view before that.
+    let target = if run.archived {
+        html! {
+            <Link<Route> to={Route::HistorySession {
+                user: run.user_id.to_string(),
+                session: run.session_id.to_string(),
+            }}>{ "View log" }</Link<Route>>
+        }
+    } else {
+        html! {
+            <a href={format!("/dashboard?session={}", run.session_id)}>{ "Open session" }</a>
+        }
+    };
+    html! {
+        <li class="schedule-run" key={run.session_id.to_string()}>
+            <time datetime={run.started_at.clone()}>{ label }</time>
+            if run.active {
+                <span class="schedule-run-live">{ "running" }</span>
+            }
+            { target }
+        </li>
+    }
+}
+
+type TaskRuns = (ScheduledTaskInfo, Result<Vec<ScheduledTaskRun>, String>);
+
+#[derive(Properties, PartialEq)]
+struct RecentRunsProps {
+    refresh: u32,
+}
+
+/// Past runs of each scheduled task, linking to their logs.
+#[function_component(RecentRuns)]
+fn recent_runs(props: &RecentRunsProps) -> Html {
+    let runs = use_state(|| None::<Result<Vec<TaskRuns>, String>>);
+    {
+        let runs = runs.clone();
+        use_effect_with(props.refresh, move |_| {
+            spawn_local(async move {
+                let tasks = match utils::fetch_json::<ScheduledTaskListResponse>(
+                    "/api/scheduled-tasks",
+                    On401::Logout,
+                )
+                .await
+                {
+                    Ok(list) => list.tasks,
+                    Err(e) => return runs.set(Some(Err(e.to_string()))),
+                };
+                // One task failing (say, deleted mid-load) costs only its own row.
+                let loaded = join_all(tasks.into_iter().map(|task| async move {
+                    let task_runs = utils::fetch_json::<ScheduledTaskRunsResponse>(
+                        &format!("/api/scheduled-tasks/{}/runs", task.id),
+                        On401::Logout,
+                    )
+                    .await
+                    .map(|r| r.runs)
+                    .map_err(|e| e.to_string());
+                    (task, task_runs)
+                }))
+                .await;
+                runs.set(Some(Ok(loaded)));
+            });
+            || ()
+        });
+    }
+
+    let body = match &*runs {
+        None => html! { <p class="schedule-day-empty">{ "Loading runs…" }</p> },
+        Some(Err(error)) => {
+            html! { <p class="settings-error">{ format!("Could not load runs: {error}") }</p> }
+        }
+        Some(Ok(tasks)) if tasks.is_empty() => {
+            html! { <p class="schedule-day-empty">{ "No scheduled tasks yet." }</p> }
+        }
+        Some(Ok(tasks)) => html! {
+            { for tasks.iter().map(|(task, task_runs)| html! {
+                <section class="schedule-runs-task" key={task.id.to_string()}>
+                    <header class="schedule-day-header">
+                        <h3 title={task.fields.name.clone()}>{ &task.fields.name }</h3>
+                        <span>{ format!("{} · {}", task.fields.launch.agent_type.as_str(), task.hostname) }</span>
+                    </header>
+                    { match task_runs {
+                        Err(error) => html! {
+                            <p class="settings-error">{ format!("Could not load runs: {error}") }</p>
+                        },
+                        Ok(task_runs) if task_runs.is_empty() => html! {
+                            <p class="schedule-day-empty">{ "Has not run yet" }</p>
+                        },
+                        Ok(task_runs) => html! {
+                            <ul class="schedule-run-list">
+                                { for task_runs.iter().take(RUNS_PER_TASK).map(run_link) }
+                            </ul>
+                        },
+                    } }
+                </section>
+            }) }
+        },
+    };
+
+    html! {
+        <div class="schedule-runs">
+            <div class="section-header">
+                <h2>{ "Recent Runs" }</h2>
+                <p class="section-description">
+                    { "Scheduled runs stay out of the session rail. Open a run here; its log moves to History once archived." }
+                </p>
+            </div>
+            { body }
+        </div>
+    }
 }
 
 #[function_component(SchedulePanel)]
@@ -163,6 +288,7 @@ pub fn schedule_panel() -> Html {
                 }}>{ "Manage scheduled tasks" }</button>
             </div>
             { content }
+            <RecentRuns refresh={*refresh} />
             if *manage_open {
                 <ScheduleDialog session={None::<shared::SessionInfo>} on_close={{
                     let manage_open = manage_open.clone();
