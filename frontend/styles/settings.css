@@ -1414,6 +1414,55 @@
     color: var(--warning, #e0af68);
 }
 
+/* Settings ▸ Plugins */
+.plugins-browser-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+}
+
+.plugins-browser-controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.plugins-browser-directory {
+    flex: 1 1 18rem;
+}
+
+.plugins-browser-controls input,
+.plugins-browser-controls select {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.plugins-browser-controls input:focus,
+.plugins-browser-controls select:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.plugins-browser a {
+    color: var(--accent);
+}
+
+.plugins-browser-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 0.9rem;
+    align-items: start;
+}
+
 /* Settings ▸ Schedule */
 .schedule-calendar {
     display: grid;

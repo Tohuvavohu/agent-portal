@@ -1,14 +1,12 @@
 use crate::components::model_select::model_cli_args;
-use crate::components::plugin_discovery::{plugin_inventory_api_path, PluginSuggestionStrip};
+use crate::components::plugin_discovery::{fetch_launcher_plugins, PluginSuggestionStrip};
 use crate::components::skip_permissions::{skip_permissions_args, skip_permissions_label};
 use crate::components::{DismissibleBackdrop, ModelSelect, ProxyTokenSetup};
 use crate::hooks::{use_escape_capture, use_focus_trap};
 use crate::utils::{self, FetchError, On401};
 use gloo::timers::callback::Timeout;
 use gloo_net::http::Request;
-use shared::api::{
-    DirectoryListingResponse, LaunchRequest, PluginInventoryResponse, ProbeAgentsResponse,
-};
+use shared::api::{DirectoryListingResponse, LaunchRequest, ProbeAgentsResponse};
 use shared::{AgentInstall, DirectoryEntry, LauncherInfo};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -377,26 +375,31 @@ pub fn launch_dialog(props: &LaunchDialogProps) -> Html {
     }
 
     {
-        let path = (*dir.path).clone();
+        let target = (*selected_launcher, (*dir.path).clone());
         let plugin_suggestions = plugin_suggestions.clone();
         let plugin_suggestion_error = plugin_suggestion_error.clone();
-        use_effect_with(path, move |path| {
-            let path = path.clone();
-            spawn_local(async move {
-                let api_path = plugin_inventory_api_path(None, Some(&path));
-                match utils::fetch_json::<PluginInventoryResponse>(&api_path, On401::Ignore).await {
-                    Ok(data) => {
-                        plugin_suggestions.set(data.plugins);
-                        plugin_suggestion_error.set(None);
+        use_effect_with(target, move |(launcher, path)| {
+            let (launcher, path) = (*launcher, path.clone());
+            // Suggestions for a directory the user has already moved past must
+            // not overwrite the current ones.
+            let current = std::rc::Rc::new(std::cell::Cell::new(true));
+            plugin_suggestions.set(Vec::new());
+            plugin_suggestion_error.set(None);
+            if let Some(launcher) = launcher {
+                let current = current.clone();
+                spawn_local(async move {
+                    let result = fetch_launcher_plugins(launcher, Some(path)).await;
+                    if !current.get() {
+                        return;
                     }
-                    Err(err) => {
-                        plugin_suggestions.set(Vec::new());
-                        plugin_suggestion_error
-                            .set(Some(format!("Could not load plugin suggestions: {err}")));
+                    match result {
+                        Ok(data) => plugin_suggestions.set(data.plugins),
+                        Err(err) => plugin_suggestion_error
+                            .set(Some(format!("Could not load plugin suggestions: {err}"))),
                     }
-                }
-            });
-            || ()
+                });
+            }
+            move || current.set(false)
         });
     }
 
