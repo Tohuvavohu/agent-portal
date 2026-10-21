@@ -5,13 +5,13 @@ use crate::plugin_policy::DirectoryPolicy;
 use anyhow::{Context, Result};
 use shared::{
     api::{
-        PluginActivation, PluginInventoryResponse, PluginOverride, PluginPolicy,
-        PortalPluginCommandInfo, PortalPluginInfo, PortalPluginSkillInfo,
+        PluginActivation, PluginContextEntry, PluginInventoryResponse, PluginOverride,
+        PluginPolicy, PortalPluginCommandInfo, PortalPluginInfo, PortalPluginSkillInfo,
     },
     plugin_manifest::InventoryManifest,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -209,12 +209,75 @@ pub(crate) fn request(
         save_selection(&selection_path(session), &config, change)?;
     }
     let resolutions = apply_selection(&mut config, session, Path::new(&working_directory))?;
-    Ok(inventory(
-        &config,
-        Some(working_directory),
-        true,
-        &resolutions,
-    ))
+    let mut response = inventory(&config, Some(working_directory), true, &resolutions);
+    response.injected_context = current_record(session, &context_path(session));
+    Ok(response)
+}
+
+/// What the session's current process was launched with, written at spawn.
+fn context_path(session: Uuid) -> PathBuf {
+    session_lib::paths::config_dir()
+        .join("session-plugins")
+        .join(format!("{session}.context.json"))
+}
+
+/// Record what a launch injected, replacing the previous launch's record.
+pub(crate) fn record_injected(session: Uuid, entries: &[PluginContextEntry]) {
+    if let Err(error) = record_injected_at(session, &context_path(session), entries) {
+        tracing::warn!("Could not record plugin context for {session}: {error:#}");
+    }
+}
+
+/// Sessions whose latest record couldn't be written. Their file on disk, if
+/// any, describes an earlier process and must not be read as current.
+/// Process-local: a restarted launcher relaunches its sessions, and each spawn
+/// writes (or marks stale) its record again.
+static STALE_RECORDS: Mutex<BTreeSet<Uuid>> = Mutex::new(BTreeSet::new());
+
+/// Replace `session`'s record at `path`. When that fails the session is
+/// marked stale before anything else, so even if the old file can't be
+/// removed either it is never shown as the current context.
+fn record_injected_at(session: Uuid, path: &Path, entries: &[PluginContextEntry]) -> Result<()> {
+    let written = serde_json::to_string(entries)
+        .map_err(anyhow::Error::from)
+        .and_then(|json| config::write_config_atomic(path, &json));
+    let mut stale = STALE_RECORDS
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Plugin context lock poisoned"))?;
+    if written.is_ok() {
+        stale.remove(&session);
+        return Ok(());
+    }
+    stale.insert(session);
+    if let Err(error) = fs::remove_file(path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(
+                "Could not clear stale plugin context {}: {error}",
+                path.display()
+            );
+        }
+    }
+    written
+}
+
+/// The session's current record: empty when the latest write failed.
+fn current_record(session: Uuid, path: &Path) -> Vec<PluginContextEntry> {
+    let stale = STALE_RECORDS
+        .lock()
+        .map_or(true, |stale| stale.contains(&session));
+    if stale {
+        return Vec::new();
+    }
+    read_injected(path)
+}
+
+/// A session launched before recording existed, or whose record is damaged,
+/// shows no record rather than a guess from the current inventory.
+fn read_injected(path: &Path) -> Vec<PluginContextEntry> {
+    fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 /// Host inventory for the Plugins browser and launch suggestions. With a
@@ -631,6 +694,88 @@ mod tests {
         assert!(enabled && r.activation == Some(Detected));
         let (enabled, r) = on(false, None, Ask, true);
         assert!(!enabled && r.activation.is_none());
+    }
+
+    /// A damaged or missing record reads as nothing recorded, never as a guess.
+    #[test]
+    fn injected_record_round_trips_and_damage_reads_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.context.json");
+        assert!(read_injected(&path).is_empty());
+        let entry = PluginContextEntry {
+            plugin: "kicadmium".into(),
+            name: "layout".into(),
+            path: "/p/skills/layout/SKILL.md".into(),
+            kind: shared::api::PluginContextKind::Skill,
+            activation: PluginActivation::Policy,
+            reason: "Always loaded in this project".into(),
+            context_bytes: 12,
+            estimated_tokens: 3,
+            text: "# Layout".into(),
+        };
+        fs::write(
+            &path,
+            serde_json::to_string(std::slice::from_ref(&entry)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(read_injected(&path), vec![entry]);
+        fs::write(&path, "broken").unwrap();
+        assert!(read_injected(&path).is_empty());
+    }
+
+    /// A failed replacement leaves no record rather than the previous
+    /// process's, which would read as current.
+    #[test]
+    fn failed_record_write_clears_the_stale_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = Uuid::new_v4();
+        let path = dir.path().join("s.context.json");
+        record_injected_at(session, &path, &[]).unwrap();
+        assert!(path.exists());
+        // The atomic write goes through `<path>.tmp`; a directory there fails it.
+        fs::create_dir(dir.path().join("s.context.json.tmp")).unwrap();
+        assert!(record_injected_at(session, &path, &[]).is_err());
+        assert!(!path.exists());
+        assert!(current_record(session, &path).is_empty());
+    }
+
+    /// When the old record can be neither replaced nor removed (a read-only
+    /// directory), it still must not read as the current context.
+    #[cfg(unix)]
+    #[test]
+    fn a_stale_record_that_cannot_be_removed_is_not_current() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let records = dir.path().join("records");
+        fs::create_dir(&records).unwrap();
+        let session = Uuid::new_v4();
+        let path = records.join("s.context.json");
+        let old = PluginContextEntry {
+            plugin: "kicadmium".into(),
+            name: "layout".into(),
+            path: "/p".into(),
+            kind: shared::api::PluginContextKind::Skill,
+            activation: PluginActivation::Detected,
+            reason: String::new(),
+            context_bytes: 1,
+            estimated_tokens: 1,
+            text: String::new(),
+        };
+        record_injected_at(session, &path, std::slice::from_ref(&old)).unwrap();
+        assert_eq!(current_record(session, &path), vec![old]);
+
+        fs::set_permissions(&records, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = record_injected_at(session, &path, &[]);
+        let still_there = path.exists();
+        fs::set_permissions(&records, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err());
+        assert!(still_there, "the read-only directory kept the old file");
+        assert!(current_record(session, &path).is_empty());
+
+        // A later successful write makes the session current again.
+        record_injected_at(session, &path, &[]).unwrap();
+        assert!(current_record(session, &path).is_empty());
+        assert!(!STALE_RECORDS.lock().unwrap().contains(&session));
     }
 
     #[test]
