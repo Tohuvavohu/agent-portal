@@ -6,6 +6,10 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct LauncherConfig {
+    /// Optional per-session cgroup v2 memory limits in bytes. Only applied on
+    /// Linux hosts with delegated memory control; new session launches read the current values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_memory: Option<SessionMemoryLimits>,
     pub backend_url: Option<String>,
     pub auth_token: Option<String>,
     pub name: Option<String>,
@@ -13,6 +17,12 @@ pub struct LauncherConfig {
     pub sessions: Vec<ExpectedSession>,
     #[serde(default)]
     pub plugins: std::collections::BTreeMap<String, InstalledPlugin>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct SessionMemoryLimits {
+    pub high_bytes: Option<u64>,
+    pub max_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -74,6 +84,24 @@ pub fn config_path_display() -> String {
 
 pub fn load_config() -> LauncherConfig {
     load_config_at(&config_path())
+}
+
+/// Session limits must never disappear because a running daemon's config was
+/// edited incorrectly. Missing files retain the first-install defaults.
+pub fn load_session_memory() -> anyhow::Result<SessionMemoryLimits> {
+    load_session_memory_at(&config_path())
+}
+
+fn load_session_memory_at(path: &Path) -> anyhow::Result<SessionMemoryLimits> {
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(SessionMemoryLimits::default())
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let config: LauncherConfig = serde_json::from_str(&contents)?;
+    Ok(config.session_memory.unwrap_or_default())
 }
 
 /// Load a [`LauncherConfig`] from an explicit path. Split out from
@@ -541,6 +569,7 @@ mod tests {
     #[test]
     fn roundtrip_config_serialization() {
         let config = LauncherConfig {
+            session_memory: None,
             backend_url: Some("wss://test.com".to_string()),
             auth_token: Some("tok_test".to_string()),
             name: Some("test-launcher".to_string()),
@@ -719,6 +748,7 @@ description: Route KiCad PCB layouts.
     fn roundtrip_config_with_session_id() {
         let sid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let config = LauncherConfig {
+            session_memory: None,
             backend_url: None,
             auth_token: None,
             name: None,
@@ -734,5 +764,27 @@ description: Route KiCad PCB layouts.
         let serialized = serde_json::to_string_pretty(&config).unwrap();
         let deserialized: LauncherConfig = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized.sessions[0].session_id, Some(sid));
+    }
+}
+
+#[cfg(test)]
+mod session_memory_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_limits_never_fall_back_to_uncapped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("launcher.json");
+        assert!(load_session_memory_at(&path).is_ok());
+        for value in ["-1", "\"1024\"", "18446744073709551616"] {
+            std::fs::write(
+                &path,
+                format!("{{\"session_memory\":{{\"max_bytes\":{value}}}}}"),
+            )
+            .unwrap();
+            assert!(load_session_memory_at(&path).is_err(), "{value}");
+        }
+        std::fs::write(&path, r#"{"session_memory":{"max_bytes":1024}}"#).unwrap();
+        assert_eq!(load_session_memory_at(&path).unwrap().max_bytes, Some(1024));
     }
 }
