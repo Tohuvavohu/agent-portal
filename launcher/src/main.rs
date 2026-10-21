@@ -25,6 +25,7 @@ mod seppuku;
 mod service;
 mod session_cgroups;
 mod session_plugins;
+mod session_spawn;
 mod work_queue;
 mod worktree;
 
@@ -103,6 +104,11 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Create and manage policy-gated child sessions.
+    Session {
+        #[command(subcommand)]
+        action: session_spawn::Action,
+    },
     /// Authenticate with the backend server via browser
     Login,
     /// Update agent-portal to the latest version (restarts service if running)
@@ -493,6 +499,42 @@ mod path_tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
+    fn child_cli_requires_a_brief_and_accepts_explicit_retry() {
+        assert!(
+            Args::try_parse_from(["agent-portal", "session", "start", "--dir", "/tmp"]).is_err()
+        );
+        assert!(Args::try_parse_from([
+            "agent-portal",
+            "session",
+            "start",
+            "--dir",
+            "/tmp",
+            "--prompt",
+            "Review parser",
+            "--json",
+            "--worktree",
+            "scratch",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000001"
+        ])
+        .is_ok());
+        assert!(Args::try_parse_from([
+            "agent-portal",
+            "session",
+            "start",
+            "--dir",
+            "/tmp",
+            "--prompt",
+            "x",
+            "--prompt-file",
+            "brief.txt"
+        ])
+        .is_err());
+        assert!(Args::try_parse_from(["agent-portal", "session", "list", "--json"]).is_ok());
+        assert!(Args::try_parse_from(["agent-portal", "session", "stop", "not-a-uuid"]).is_err());
+    }
+
+    #[test]
     fn managed_forward_cli_accepts_script_health_path_and_literal_arguments() {
         let parsed = Args::try_parse_from([
             "agent-portal",
@@ -586,6 +628,7 @@ async fn main() -> anyhow::Result<()> {
                 ServiceAction::Pastebin => pastebin::upload_diagnostics().await,
             };
         }
+        Some(Command::Session { action }) => return session_spawn::run(action).await,
         Some(Command::Message { action }) => {
             return match action {
                 MessageAction::List => message::list().await,

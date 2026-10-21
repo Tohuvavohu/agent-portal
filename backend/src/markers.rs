@@ -157,6 +157,11 @@ pub const HISTORY_RESTORE_INVALID: &str = "HISTORY_RESTORE_INVALID";
 /// health and remove the named stale pending request if it is replayed.
 pub const PERMISSION_CANCEL_PERSIST_FAILED: &str = "PERMISSION_CANCEL_PERSIST_FAILED";
 
+/// Child lifecycle persistence/sweep failure. Repeated events mean database
+/// failure or schema drift; inspect migration state and database health. The
+/// periodic sweep retries automatically; do not manually delete request rows.
+pub const SPAWN_LIFECYCLE_FAILED: &str = "SPAWN_LIFECYCLE_FAILED";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +170,7 @@ mod tests {
     /// the tests below can enforce uniqueness, naming, and that each is wired to
     /// a real emit site.
     const ALL_MARKERS: &[&str] = &[
+        SPAWN_LIFECYCLE_FAILED,
         PENDING_INPUT_PERSIST_FAILED,
         INPUT_SEQ_BUMP_FAILED,
         PUSH_DISPATCH_FAILED,
