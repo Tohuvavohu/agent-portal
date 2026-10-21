@@ -1,0 +1,134 @@
+{
+  "frontend_commit": "6228fe55",
+  "profile": "trunk build --release",
+  "environment": "Headless Chromium on shared Linux build host; concurrent activity uncontrolled, not a production SLA",
+  "reports": [
+    {
+      "label": "release-6228fe55",
+      "width": 1440,
+      "height": 1000,
+      "browser_version": "156.0.8078.4",
+      "fixture_version": 2,
+      "samples": [
+        {
+          "markers": 0,
+          "iteration": 0,
+          "hydration_wall_ms": 199.9,
+          "replay_wall_ms": 116.1,
+          "dom_nodes": 971
+        },
+        {
+          "markers": 0,
+          "iteration": 1,
+          "hydration_wall_ms": 141.9,
+          "replay_wall_ms": 81.2,
+          "dom_nodes": 971
+        },
+        {
+          "markers": 0,
+          "iteration": 2,
+          "hydration_wall_ms": 166.7,
+          "replay_wall_ms": 77.6,
+          "dom_nodes": 971
+        },
+        {
+          "markers": 5000,
+          "iteration": 0,
+          "hydration_wall_ms": 528.2,
+          "replay_wall_ms": 365.8,
+          "dom_nodes": 976
+        },
+        {
+          "markers": 5000,
+          "iteration": 1,
+          "hydration_wall_ms": 509.1,
+          "replay_wall_ms": 336.4,
+          "dom_nodes": 976
+        },
+        {
+          "markers": 5000,
+          "iteration": 2,
+          "hydration_wall_ms": 499.1,
+          "replay_wall_ms": 340.7,
+          "dom_nodes": 976
+        }
+      ],
+      "medians": [
+        {
+          "markers": 0,
+          "hydration_wall_ms": 166.7,
+          "replay_wall_ms": 81.2
+        },
+        {
+          "markers": 5000,
+          "hydration_wall_ms": 509.1,
+          "replay_wall_ms": 340.7
+        }
+      ]
+    },
+    {
+      "label": "release-6228fe55-mobile",
+      "width": 390,
+      "height": 1000,
+      "browser_version": "156.0.8078.4",
+      "fixture_version": 2,
+      "samples": [
+        {
+          "markers": 0,
+          "iteration": 0,
+          "hydration_wall_ms": 160.7,
+          "replay_wall_ms": 88.9,
+          "dom_nodes": 956
+        },
+        {
+          "markers": 0,
+          "iteration": 1,
+          "hydration_wall_ms": 156.9,
+          "replay_wall_ms": 80.1,
+          "dom_nodes": 956
+        },
+        {
+          "markers": 0,
+          "iteration": 2,
+          "hydration_wall_ms": 157.5,
+          "replay_wall_ms": 82.9,
+          "dom_nodes": 956
+        },
+        {
+          "markers": 5000,
+          "iteration": 0,
+          "hydration_wall_ms": 571.5,
+          "replay_wall_ms": 395.7,
+          "dom_nodes": 961
+        },
+        {
+          "markers": 5000,
+          "iteration": 1,
+          "hydration_wall_ms": 497.7,
+          "replay_wall_ms": 342.2,
+          "dom_nodes": 961
+        },
+        {
+          "markers": 5000,
+          "iteration": 2,
+          "hydration_wall_ms": 499.9,
+          "replay_wall_ms": 337.6,
+          "dom_nodes": 961
+        }
+      ],
+      "medians": [
+        {
+          "markers": 0,
+          "hydration_wall_ms": 157.5,
+          "replay_wall_ms": 82.9
+        },
+        {
+          "markers": 5000,
+          "hydration_wall_ms": 499.9,
+          "replay_wall_ms": 342.2
+        }
+      ]
+    }
+  ],
+  "fixture_version": 2
+}
