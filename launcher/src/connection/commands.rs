@@ -422,9 +422,12 @@ pub(super) async fn handle_message(
             selection,
         } => {
             let sender = import_reply_tx.clone();
+            // A session running here picks up a selection change on its next
+            // turn, instead of waiting for a restart.
+            let live = process_manager.context_inbox(&session_id);
             tokio::spawn(async move {
                 let result = tokio::task::spawn_blocking(move || {
-                    crate::session_plugins::request(session_id, working_directory, selection)
+                    crate::session_plugins::request(session_id, working_directory, selection, live)
                 })
                 .await
                 .map_err(|error| error.to_string())

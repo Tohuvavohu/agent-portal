@@ -16,6 +16,9 @@ use yew::prelude::*;
 pub(super) struct PluginContextNoticeProps {
     /// The launcher's record of what this session's process was given.
     pub entries: Vec<PluginContextEntry>,
+    /// A posted change hasn't reached the agent yet.
+    #[prop_or_default]
+    pub pending: bool,
     /// Current inventory, for display names and project policy.
     pub plugins: Vec<PortalPluginInfo>,
     pub expanded: bool,
@@ -52,7 +55,8 @@ fn activation_label(activation: PluginActivation) -> &'static str {
     }
 }
 
-/// What this session's process was launched with, from the launcher's record,
+/// The plugin context this session is using, from the launcher's record (set at
+/// launch, replaced when a selection change reaches the running session),
 /// with each file's text one click away rather than in the transcript.
 #[function_component(PluginContextNotice)]
 pub(super) fn plugin_context_notice(props: &PluginContextNoticeProps) -> Html {
@@ -140,6 +144,9 @@ pub(super) fn plugin_context_notice(props: &PluginContextNoticeProps) -> Html {
             </button>
             if expanded {
                 <div class="plugin-context-body">
+                    if props.pending {
+                        <div class="plugin-context-detail">{ "A plugin change is waiting for the session's next turn." }</div>
+                    }
                     if let Some(error) = &*error {
                         <div class="edit-stack-error">{ error }</div>
                     }

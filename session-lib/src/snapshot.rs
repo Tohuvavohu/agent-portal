@@ -39,6 +39,10 @@ pub struct SessionConfig {
     /// persisted in snapshots or emitted by Debug.
     #[serde(skip)]
     pub portal_credentials: Option<PortalCredentials>,
+    /// A change to the session's context posted while it runs (its plugins
+    /// changed), folded into the next real input. Live state, never persisted.
+    #[serde(skip)]
+    pub context_updates: crate::ContextInbox,
     /// Unique session identifier
     pub session_id: Uuid,
     /// Working directory for the Claude session
@@ -230,6 +234,7 @@ mod tests {
             memory_events_path: None,
             recovery_context: None,
             portal_credentials: None,
+            context_updates: Default::default(),
             session_id: Uuid::new_v4(),
             working_directory: PathBuf::from("/tmp/test"),
             session_name: "test-session".to_string(),
