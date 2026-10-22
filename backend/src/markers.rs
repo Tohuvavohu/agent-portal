@@ -162,6 +162,17 @@ pub const PERMISSION_CANCEL_PERSIST_FAILED: &str = "PERMISSION_CANCEL_PERSIST_FA
 /// periodic sweep retries automatically; do not manually delete request rows.
 pub const SPAWN_LIFECYCLE_FAILED: &str = "SPAWN_LIFECYCLE_FAILED";
 
+/// A session stopped running (a failed launch, or its proxy disconnected),
+/// but its members could not be looked up to tell their dashboards
+/// (`handlers/websocket/member_status.rs`). Nobody is told beyond the owner's
+/// own launch result: the fan-out fails closed rather than broadcast wider.
+///
+/// - **Recurring:** DB/pool failure or schema drift on `session_members`;
+///   members' session lists show stale "running" status until they refresh.
+/// - **One-off:** a transient DB blip; only that change is missed.
+/// - **Action:** check DB health and the `session_members` schema.
+pub const MEMBER_STATUS_FANOUT_FAILED: &str = "MEMBER_STATUS_FANOUT_FAILED";
+
 /// A plugin command the user approved ran on its launcher
 /// (`handlers/plugins.rs`), but its card could not be written to the session
 /// transcript. The run is not repeated: the result still goes back to the
@@ -193,6 +204,7 @@ mod tests {
         HISTORY_RESTORE_INVALID,
         PERMISSION_CANCEL_PERSIST_FAILED,
         PLUGIN_COMMAND_RECORD_FAILED,
+        MEMBER_STATUS_FANOUT_FAILED,
     ];
 
     #[test]
@@ -238,6 +250,7 @@ mod tests {
             include_str!("handlers/media_archive.rs"),
             include_str!("handlers/websocket/launcher_socket.rs"),
             include_str!("handlers/plugins.rs"),
+            include_str!("handlers/websocket/member_status.rs"),
         ];
         for m in ALL_MARKERS {
             let referenced = sources.iter().any(|s| s.contains(m));
