@@ -4,8 +4,9 @@ use crate::components::plugin_discovery::{
     run_plugin_action, suggested_plugins, PluginCard, PLUGINS_BROWSER,
 };
 use shared::api::{
-    PluginAction, PluginActivation, PluginContextEntry, PluginContextKind, PluginPolicy,
-    PluginRequest, PortalPluginInfo,
+    ForwardInfo, PluginAction, PluginActivation, PluginContextEntry, PluginContextKind,
+    PluginPolicy, PluginRequest, PluginSurfaceAction, PluginSurfaceState, PluginSurfaceStatus,
+    PortalPluginInfo,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -37,6 +38,10 @@ pub(super) struct PluginDiscoverySurfaceProps {
     pub on_toggle_collapsed: Callback<MouseEvent>,
     pub on_toggle_mode: Callback<MouseEvent>,
     pub on_close: Callback<MouseEvent>,
+    /// This session's computer and id, when the viewer may run its plugins'
+    /// surfaces (the owner, on the home portal).
+    pub surface_host: Option<(Uuid, Uuid)>,
+    pub on_open_forward: Callback<ForwardInfo>,
 }
 
 fn source_size(bytes: u64) -> String {
@@ -273,10 +278,198 @@ pub(super) fn plugin_discovery_surface(props: &PluginDiscoverySurfaceProps) -> H
                         if props.plugins.is_empty() {
                             <div class="edit-stack-empty">{ "No installed Portal plugins were discovered on this host." }</div>
                         }
-                        { for props.plugins.iter().map(|plugin| html! { <PluginCard key={plugin.name.clone()} plugin={plugin.clone()} /> }) }
+                        { for props.plugins.iter().map(|plugin| html! {
+                            <PluginCard key={plugin.name.clone()} plugin={plugin.clone()}>
+                                if let (Some((launcher_id, session_id)), Some(_)) = (props.surface_host, plugin.surface_kind.as_ref()) {
+                                    <SurfaceControls
+                                        plugin={plugin.name.clone()}
+                                        {launcher_id}
+                                        {session_id}
+                                        on_open={props.on_open_forward.clone()}
+                                    />
+                                }
+                            </PluginCard>
+                        }) }
                     </div>
                 </section>
             }
         </aside>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct SurfaceControlsProps {
+    pub plugin: String,
+    pub launcher_id: Uuid,
+    pub session_id: Uuid,
+    pub on_open: Callback<ForwardInfo>,
+}
+
+fn surface_state_label(state: &PluginSurfaceState) -> &'static str {
+    match state {
+        PluginSurfaceState::Stopped => "stopped",
+        PluginSurfaceState::Starting => "starting",
+        PluginSurfaceState::Healthy => "healthy",
+        PluginSurfaceState::Unhealthy => "unhealthy",
+        PluginSurfaceState::Exited => "exited",
+    }
+}
+
+/// A plugin surface as a managed pane: its state, start/stop/restart, and
+/// opening it docked or in a tab. It runs as a launcher-managed forward on
+/// this session, so the forward's usual privacy rules apply.
+#[function_component(SurfaceControls)]
+pub(super) fn surface_controls(props: &SurfaceControlsProps) -> Html {
+    let status = use_state(|| None::<PluginSurfaceStatus>);
+    let busy = use_state(|| None::<&'static str>);
+    let error = use_state(|| None::<String>);
+    // Every request gets a number; only the latest one's answer is applied,
+    // so a delayed status can't overwrite a finished start, and an answer
+    // for an earlier computer, session or plugin is dropped whole.
+    let latest = use_mut_ref(|| 0_u64);
+    // The change in progress, claimed synchronously so two clicks before the
+    // next render start one; released only by the request that claimed it.
+    let in_flight = use_mut_ref(|| None::<u64>);
+    let target = (props.launcher_id, props.session_id, props.plugin.clone());
+    let run = {
+        let (status, busy, error) = (status.clone(), busy.clone(), error.clone());
+        let (latest, in_flight) = (latest.clone(), in_flight.clone());
+        let (launcher_id, session_id, plugin) = target.clone();
+        Callback::from(
+            move |(label, action): (&'static str, PluginSurfaceAction)| {
+                let mutation = action != PluginSurfaceAction::Status;
+                if mutation && in_flight.borrow().is_some() {
+                    return;
+                }
+                let seq = {
+                    let mut latest = latest.borrow_mut();
+                    *latest += 1;
+                    *latest
+                };
+                if mutation {
+                    *in_flight.borrow_mut() = Some(seq);
+                }
+                let request = PluginRequest {
+                    working_directory: None,
+                    session_id: Some(session_id),
+                    action: PluginAction::Surface {
+                        name: plugin.clone(),
+                        action,
+                    },
+                };
+                let (status, busy, error) = (status.clone(), busy.clone(), error.clone());
+                let (latest, in_flight) = (latest.clone(), in_flight.clone());
+                busy.set(Some(label));
+                spawn_local(async move {
+                    let result = run_plugin_action(launcher_id, &request).await;
+                    if *in_flight.borrow() == Some(seq) {
+                        *in_flight.borrow_mut() = None;
+                    }
+                    if *latest.borrow() != seq {
+                        return;
+                    }
+                    busy.set(None);
+                    match result {
+                        Ok(response) => {
+                            status.set(response.surface);
+                            error.set(None);
+                        }
+                        Err(e) => error.set(Some(e)),
+                    }
+                });
+            },
+        )
+    };
+    {
+        let run = run.clone();
+        let (status, error, busy) = (status.clone(), error.clone(), busy.clone());
+        let in_flight = in_flight.clone();
+        use_effect_with(target, move |_| {
+            // A new target: nothing in flight belongs to it any more.
+            *in_flight.borrow_mut() = None;
+            status.set(None);
+            error.set(None);
+            busy.set(None);
+            run.emit(("Checking", PluginSurfaceAction::Status));
+            || ()
+        });
+    }
+    let button = |label: &'static str, verb: &'static str, action: PluginSurfaceAction| {
+        let run = run.clone();
+        html! {
+            <button
+                type="button"
+                class="surface-control"
+                disabled={busy.is_some()}
+                onclick={Callback::from(move |_| run.emit((verb, action)))}
+            >{ label }</button>
+        }
+    };
+    let current = (*status).clone();
+    let state = current
+        .as_ref()
+        .map_or(PluginSurfaceState::Stopped, |s| s.state.clone());
+    let here = current
+        .as_ref()
+        .is_none_or(|s| s.session_id.is_none_or(|id| id == props.session_id));
+    let running = !matches!(
+        state,
+        PluginSurfaceState::Stopped | PluginSurfaceState::Exited
+    );
+    let forward = current.as_ref().and_then(|s| {
+        Some(ForwardInfo {
+            port: s.port?,
+            url: s.url.clone()?,
+            created_at: s.started_at.clone().unwrap_or_default(),
+            public: false,
+            listening: Some(s.state == PluginSurfaceState::Healthy),
+            process: None,
+        })
+    });
+    html! {
+        <div class="plugin-surface-controls">
+            <div class="plugin-surface-status">
+                <span class={classes!("plugin-surface-state", surface_state_label(&state))}>
+                    { busy.map_or_else(|| surface_state_label(&state).to_string(), |b| format!("{b}…")) }
+                </span>
+                if !here {
+                    <span class="plugin-surface-note">{ "running for another session" }</span>
+                }
+                if let Some(path) = current.as_ref().and_then(|s| s.health_path.clone()) {
+                    <span class="plugin-surface-note">{ format!("health {path}") }</span>
+                }
+            </div>
+            <div class="plugin-card-actions">
+                if running && here {
+                    { button("Restart", "Restarting", PluginSurfaceAction::Restart) }
+                    { button("Stop", "Stopping", PluginSurfaceAction::Stop) }
+                } else {
+                    { button("Start", "Starting", PluginSurfaceAction::Start) }
+                }
+                if let (Some(forward), true) = (forward, here) {
+                    <button type="button" class="surface-control" onclick={{
+                        let (on_open, forward) = (props.on_open.clone(), forward.clone());
+                        Callback::from(move |_| on_open.emit(forward.clone()))
+                    }}>{ "Open docked" }</button>
+                    <a class="surface-control" href={forward.url.clone()} target="_blank" rel="noopener noreferrer">
+                        { "Open in new tab" }
+                    </a>
+                }
+            </div>
+            if let Some(error) = &*error {
+                <div class="edit-stack-error">{ error }</div>
+            }
+            if let Some(last) = current.as_ref().and_then(|s| s.last_error.clone()) {
+                <div class="edit-stack-error">{ last }</div>
+            }
+            if let Some(s) = current.as_ref().filter(|s| {
+                !s.log_tail.is_empty() && s.state != PluginSurfaceState::Healthy
+            }) {
+                <details class="plugin-surface-log">
+                    <summary>{ "Log" }</summary>
+                    <pre>{ s.log_tail.join("\n") }</pre>
+                </details>
+            }
+        </div>
     }
 }
