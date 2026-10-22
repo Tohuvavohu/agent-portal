@@ -825,6 +825,77 @@ async fn start_managed(name: &str, session_id: String, cwd: PathBuf) -> Result<S
     Ok(state)
 }
 
+/// One `[[commands]]` entry resolved for a session (#2161).
+pub(crate) struct CommandInvocation {
+    /// What Portal runs: the plugin's environment, from the plugin's
+    /// directory, as for its other commands.
+    pub command: Command,
+    /// The exact command line, shown for approval and kept as provenance.
+    pub line: String,
+    /// A stale-preview check over the request, the resolved line, its
+    /// environment and the manifest bytes (not the contents of files the
+    /// line runs), so approving one preview runs nothing if any of those
+    /// changed before the run. Not an authorization token: the backend's
+    /// owner check is the security boundary.
+    pub fingerprint: String,
+}
+
+/// Resolve a plugin command. `{cwd}` and `{session_id}` come from the
+/// session; `args` are shell-quoted onto `run`, and only for a command that
+/// accepts them.
+pub(crate) fn command_invocation(
+    name: &str,
+    command: &str,
+    args: &[String],
+    session_id: &str,
+    cwd: &Path,
+) -> Result<CommandInvocation> {
+    let runtime = load_runtime(name)?;
+    ensure_enabled(name, &runtime.installed)?;
+    let entry = runtime
+        .manifest
+        .commands
+        .iter()
+        .find(|c| c.name == command)
+        .ok_or_else(|| anyhow!("plugin `{name}` has no command `{command}`"))?;
+    if !args.is_empty() && !entry.accepts_args {
+        bail!("`{name}:{command}` takes no arguments");
+    }
+    let process = PluginProcess::new(&runtime);
+    let mut line = process.expand(
+        &entry.run,
+        Some(&[
+            ("session_id", session_id.to_string()),
+            ("cwd", cwd.display().to_string()),
+        ]),
+    );
+    for arg in args {
+        line.push(' ');
+        line.push_str(&process::shell_quote(arg));
+    }
+    let fingerprint = {
+        use std::hash::{BuildHasher, Hash, Hasher};
+        // Seeded per launcher process, so a preview from before a restart
+        // never matches. Not a cryptographic MAC.
+        static KEY: std::sync::OnceLock<std::collections::hash_map::RandomState> =
+            std::sync::OnceLock::new();
+        let mut hasher = KEY.get_or_init(Default::default).build_hasher();
+        (name, command, args, session_id, cwd, &line).hash(&mut hasher);
+        process::plugin_command_env(&runtime).hash(&mut hasher);
+        runtime.root.hash(&mut hasher);
+        std::fs::read(runtime.root.join(MANIFEST))
+            .with_context(|| format!("failed to read `{name}`'s manifest"))?
+            .hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    };
+    let command = process.command(&line)?;
+    Ok(CommandInvocation {
+        command,
+        line,
+        fingerprint,
+    })
+}
+
 /// Run one surface action for the Portal dock and report the surface (#2160).
 /// Start and restart forward to `session` (its id and working directory),
 /// as `plugin open` does from inside it; status and stop need no session.
