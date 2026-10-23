@@ -1636,9 +1636,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865"
 dependencies = [
  "cmov",
 ]
@@ -4487,9 +4487,9 @@ dependencies = [
 
 [[package]]
 name = "muse-codes"
-version = "1.4.11"
+version = "1.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0b4105181c4883f905378f692d56a362ea0357dcb4f2619893aa92a2135eb97"
+checksum = "69cab7f572abbb2a60df9604181f603c0f7e07b677cb9df41c48263690b96d8d"
 dependencies = [
  "log",
  "serde",
