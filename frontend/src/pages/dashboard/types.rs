@@ -230,15 +230,6 @@ impl RailPosition {
     }
 }
 
-/// Wrap top/bottom session bars onto multiple rows (default: off).
-pub fn load_rail_wrap() -> bool {
-    load_bool_pref("claude-portal-session-rail-wrap")
-}
-
-pub fn save_rail_wrap(enabled: bool) {
-    save_bool_pref("claude-portal-session-rail-wrap", enabled);
-}
-
 /// Load the "group session rail by host" preference (default: off).
 pub fn load_group_by_host() -> bool {
     load_bool_pref(SESSION_RAIL_GROUP_BY_HOST_STORAGE_KEY)

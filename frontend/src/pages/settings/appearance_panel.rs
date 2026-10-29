@@ -1,7 +1,7 @@
 use crate::components::{load_voice_hold_open, save_voice_hold_open};
 use crate::pages::dashboard::{
-    load_group_by_host, load_rail_position, load_rail_wrap, load_vim_mode, save_group_by_host,
-    save_rail_position, save_rail_wrap, save_vim_mode, RailPosition,
+    load_group_by_host, load_rail_position, load_vim_mode, save_group_by_host, save_rail_position,
+    save_vim_mode, RailPosition,
 };
 use crate::ui_theme::{load_ui_theme, set_ui_theme, UiTheme};
 use yew::prelude::*;
@@ -18,18 +18,8 @@ pub fn appearance_panel() -> Html {
     let position = use_state(load_rail_position);
     let vim_enabled = use_state(load_vim_mode);
     let group_by_host = use_state(load_group_by_host);
-    let rail_wrap = use_state(load_rail_wrap);
     let voice_hold_open = use_state(load_voice_hold_open);
     let ui_theme = use_state(load_ui_theme);
-
-    let on_toggle_rail_wrap = {
-        let rail_wrap = rail_wrap.clone();
-        Callback::from(move |e: Event| {
-            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
-            save_rail_wrap(input.checked());
-            rail_wrap.set(input.checked());
-        })
-    };
 
     let on_toggle_group_by_host = {
         let group_by_host = group_by_host.clone();
@@ -129,17 +119,6 @@ pub fn appearance_panel() -> Html {
                         }
                     })}
                 </div>
-            </div>
-
-            <div class="appearance-setting">
-                <h3>{ "Wrap sessions onto multiple rows" }</h3>
-                <p class="setting-description">
-                    { "Show more sessions at once in the top or bottom bar. Uses extra rows instead of horizontal scrolling. Left and right bars are unchanged." }
-                </p>
-                <label class="toggle-label">
-                    <input type="checkbox" checked={*rail_wrap} onchange={on_toggle_rail_wrap} />
-                    <span>{ if *rail_wrap { "Enabled" } else { "Disabled" } }</span>
-                </label>
             </div>
 
             <div class="appearance-setting">
