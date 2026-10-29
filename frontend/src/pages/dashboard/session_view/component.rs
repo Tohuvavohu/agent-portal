@@ -982,7 +982,7 @@ impl Component for SessionView {
                     .emit((Self::session_key(ctx), true));
                 true
             }
-            SessionViewMsg::WebSocketError(err) => self.handle_ws_error(ctx, err),
+            SessionViewMsg::WebSocketError(err) => self.handle_ws_error(ctx, err, true),
             SessionViewMsg::AttemptReconnect => {
                 self.attempt_reconnect(ctx);
                 false
@@ -1828,6 +1828,7 @@ impl SessionView {
                     .send_message(SessionViewMsg::WebSocketConnected(sender));
                 false
             }
+            WsEvent::Incompatible(err) => self.handle_ws_error(ctx, err, false),
             WsEvent::Error(err) => {
                 ctx.link().send_message(SessionViewMsg::WebSocketError(err));
                 false
@@ -2650,7 +2651,7 @@ impl SessionView {
         }
     }
 
-    fn handle_ws_error(&mut self, ctx: &Context<Self>, err: String) -> bool {
+    fn handle_ws_error(&mut self, ctx: &Context<Self>, err: String, retryable: bool) -> bool {
         self.ws_connected = false;
         self.ws_sender = None;
         ctx.props()
@@ -2658,7 +2659,8 @@ impl SessionView {
             .emit((Self::session_key(ctx), false));
 
         const MAX_ATTEMPTS: u32 = 10;
-        if self.reconnect_attempt < MAX_ATTEMPTS {
+        self.reconnect_timer = None;
+        if retryable && self.reconnect_attempt < MAX_ATTEMPTS {
             self.reconnect_attempt += 1;
             let delay_ms = calculate_backoff(self.reconnect_attempt - 1);
             log::info!(

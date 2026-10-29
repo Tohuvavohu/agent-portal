@@ -247,6 +247,7 @@ pub async fn register_session(
     let hostname = hostname_or_unknown();
 
     let register_msg = ProxyToServer::Register(shared::RegisterFields {
+        protocol_version: Some(shared::protocol::PROTOCOL_VERSION),
         session_id: config.session_id,
         session_name: config.session_name.clone(),
         auth_token: config.auth_token.clone(),
@@ -279,6 +280,7 @@ pub async fn register_session(
         while let Some(result) = conn.recv().await {
             match result {
                 Ok(ServerToProxy::RegisterAck {
+                    protocol_version,
                     success,
                     session_id: _,
                     error,
@@ -290,6 +292,11 @@ pub async fn register_session(
                     tunnel_data_ticket,
                     tunnel_sizing,
                 }) => {
+                    if let Err(error) =
+                        shared::protocol::check_protocol_version(protocol_version, "server")
+                    {
+                        return Some((false, Some(error), false, None, None));
+                    }
                     return Some((success, error, retryable, tunnel_data_ticket, tunnel_sizing));
                 }
                 Ok(_) => continue,
@@ -748,3 +755,6 @@ mod tests {
         assert!(parse_visible_claude_output(&json!(42)).is_none());
     }
 }
+
+#[cfg(test)]
+mod registration_compatibility_tests;
