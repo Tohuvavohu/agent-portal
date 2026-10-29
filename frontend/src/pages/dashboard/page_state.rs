@@ -206,6 +206,7 @@ pub(super) struct DashboardUiState {
     pub rail_position: RailPosition,
     /// Opt-in: group the session rail's pills into per-host sections.
     pub group_by_host: bool,
+    pub rail_wrap: bool,
     /// Header collapsed to its slim pull strip (any viewport). The strip is
     /// itself the expand affordance, so the header can never be lost.
     pub header_collapsed: bool,
@@ -217,6 +218,7 @@ impl DashboardUiState {
         inactive_hidden: bool,
         rail_position: RailPosition,
         group_by_host: bool,
+        rail_wrap: bool,
         header_collapsed: bool,
     ) -> Self {
         Self {
@@ -229,6 +231,7 @@ impl DashboardUiState {
             inactive_hidden,
             rail_position,
             group_by_host,
+            rail_wrap,
             header_collapsed,
             pending_leave: None,
         }
@@ -252,6 +255,7 @@ pub(super) enum DashboardUiAction {
     SetInactiveHidden(bool),
     SetRailPosition(RailPosition),
     SetGroupByHost(bool),
+    SetRailWrap(bool),
     ToggleHeaderCollapsed,
     RequestLeave(SessionKey),
     ClearPendingLeave,
@@ -306,6 +310,9 @@ impl Reducible for DashboardUiState {
             }
             DashboardUiAction::SetRailPosition(position) => {
                 state.rail_position = position;
+            }
+            DashboardUiAction::SetRailWrap(enabled) => {
+                state.rail_wrap = enabled;
             }
             DashboardUiAction::SetGroupByHost(enabled) => {
                 state.group_by_host = enabled;
@@ -568,7 +575,7 @@ mod tests {
     /// the list rather than whatever was last viewed.
     #[test]
     fn ui_reducer_tracks_the_history_overlay() {
-        let state = DashboardUiState::new(false, RailPosition::Top, false, false);
+        let state = DashboardUiState::new(false, RailPosition::Top, false, false, false);
         let state = reduce_ui(state, DashboardUiAction::ShowHistory);
         let state = state.reduce(DashboardUiAction::OpenHistorySession(
             "u".into(),
@@ -584,7 +591,7 @@ mod tests {
 
     #[test]
     fn ui_reducer_controls_modal_visibility() {
-        let state = DashboardUiState::new(false, RailPosition::Top, false, false);
+        let state = DashboardUiState::new(false, RailPosition::Top, false, false, false);
         let state = reduce_ui(state, DashboardUiAction::ToggleLaunchDialog);
         assert!(state.show_launch_dialog);
 
@@ -609,7 +616,7 @@ mod tests {
 
     #[test]
     fn ui_reducer_tracks_preferences() {
-        let state = DashboardUiState::new(false, RailPosition::Top, false, false);
+        let state = DashboardUiState::new(false, RailPosition::Top, false, false, false);
         let state = reduce_ui(state, DashboardUiAction::SetInactiveHidden(true));
         let state = state.reduce(DashboardUiAction::SetRailPosition(RailPosition::Left));
         let state = state.reduce(DashboardUiAction::SetGroupByHost(true));
@@ -628,7 +635,7 @@ mod tests {
     /// Leave still routes through a modal, so the reducer still tracks it.
     /// Closing a session does not: the rail menu arms and fires it locally.
     fn ui_reducer_tracks_pending_confirmations() {
-        let state = DashboardUiState::new(false, RailPosition::Top, false, false);
+        let state = DashboardUiState::new(false, RailPosition::Top, false, false, false);
         let state = reduce_ui(state, DashboardUiAction::RequestLeave(id(1)));
         assert_eq!(state.pending_leave, Some(id(1)));
 

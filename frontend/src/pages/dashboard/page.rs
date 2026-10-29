@@ -11,8 +11,8 @@ use super::session_rail::{ActivityRef, AgentMessageBroadcast, BroadcastRef, Sess
 use super::session_view::SessionView;
 use super::types::{
     load_group_by_host, load_header_collapsed, load_hidden_sessions, load_inactive_hidden,
-    load_rail_position, save_header_collapsed, save_hidden_sessions, save_inactive_hidden,
-    PortalSession,
+    load_rail_position, load_rail_wrap, save_header_collapsed, save_hidden_sessions,
+    save_inactive_hidden, PortalSession,
 };
 use crate::components::{
     ConfirmModal, ConfirmModalStyle, HelpOverlay, LaunchDialog, OnboardingTutorial, ServiceMonitor,
@@ -145,6 +145,7 @@ pub fn dashboard_page() -> Html {
             load_inactive_hidden(),
             load_rail_position(),
             load_group_by_host(),
+            load_rail_wrap(),
             load_header_collapsed(),
         )
     });
@@ -453,6 +454,7 @@ pub fn dashboard_page() -> Html {
             // the user navigates back.
             ui_state.dispatch(DashboardUiAction::SetRailPosition(load_rail_position()));
             ui_state.dispatch(DashboardUiAction::SetGroupByHost(load_group_by_host()));
+            ui_state.dispatch(DashboardUiAction::SetRailWrap(load_rail_wrap()));
             ui_state.dispatch(DashboardUiAction::CloseSettings);
         })
     };
@@ -958,6 +960,7 @@ pub fn dashboard_page() -> Html {
                     <div class={classes!(
                         "dashboard-body",
                         ui_state.rail_position.body_class(),
+                        ui_state.rail_wrap.then_some("rail-wrap"),
                         if is_mobile_dashboard { Some("mobile-session-mode") } else { None },
                     )}>
                     // Session Rail

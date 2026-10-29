@@ -1559,3 +1559,29 @@ a.pill-menu-option.pr-link:hover {
 .pill-share:active {
     background: rgba(122, 162, 247, 0.3);
 }
+
+/* Keep all pills reachable without horizontal scrolling in the opt-in wrapped
+   layout. Bound the height so large session lists still leave room for chat.
+   Host clusters must wrap internally as well as between groups. */
+.dashboard-body.rail-wrap:is(.rail-top, .rail-bottom) > .session-rail-container {
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.dashboard-body.rail-wrap:is(.rail-top, .rail-bottom) .session-rail {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 35vh;
+}
+
+.dashboard-body.rail-wrap:is(.rail-top, .rail-bottom) .session-rail-host-group {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.dashboard-body.rail-wrap:is(.rail-top, .rail-bottom) .session-rail-host-group-pills {
+    flex-wrap: wrap;
+}
