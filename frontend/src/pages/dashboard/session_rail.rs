@@ -223,6 +223,7 @@ fn render_pill_section(
             <div
                 key={format!("{section_key}-host-{identity:?}")}
                 class="session-rail-host-group"
+                style={format!("--session-count: {count}")}
             >
                 <div
                     class="session-rail-host-header"
