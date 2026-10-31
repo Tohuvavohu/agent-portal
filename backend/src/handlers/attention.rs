@@ -271,6 +271,85 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn explicit_receipt_survives_retention_and_stays_reader_and_reply_scoped() {
+        let Some(pool) = shared_pool() else {
+            return;
+        };
+        let mut conn = pool.get().unwrap();
+        let owner = insert_user(&mut conn, "retained-attention");
+        let reader = insert_user(&mut conn, "retained-attention");
+        let session = insert_session(&mut conn, owner.id, "retained-attention");
+        member(&mut conn, session.id, owner.id);
+        member(&mut conn, session.id, reader.id);
+        let terminal = reply(&mut conn, session.id, owner.id);
+        record_reply(&mut conn, &terminal).unwrap();
+        // Exercise the real count-retention path, leaving only the snapshot.
+        assert_eq!(
+            super::super::retention::truncate_session_messages(
+                &mut conn,
+                session.id,
+                super::super::retention::RetentionConfig::new(0, 0),
+                1,
+            )
+            .unwrap(),
+            1
+        );
+        let state = Arc::new(test_app_state(pool));
+        update(
+            State(state.clone()),
+            CurrentUserId(owner.id),
+            Path(session.id),
+            Json(request(Some(terminal.id))),
+        )
+        .await
+        .unwrap();
+        let rows = list(State(state.clone()), CurrentUserId(owner.id))
+            .await
+            .unwrap()
+            .0
+            .sessions;
+        assert!(
+            !rows
+                .iter()
+                .find(|r| r.session_id == session.id)
+                .unwrap()
+                .unread
+        );
+        let rows = list(State(state.clone()), CurrentUserId(reader.id))
+            .await
+            .unwrap()
+            .0
+            .sessions;
+        assert!(
+            rows.iter()
+                .find(|r| r.session_id == session.id)
+                .unwrap()
+                .unread
+        );
+        let newer = reply(&mut conn, session.id, owner.id);
+        record_reply(&mut conn, &newer).unwrap();
+        update(
+            State(state.clone()),
+            CurrentUserId(owner.id),
+            Path(session.id),
+            Json(request(Some(terminal.id))),
+        )
+        .await
+        .unwrap();
+        let rows = list(State(state), CurrentUserId(owner.id))
+            .await
+            .unwrap()
+            .0
+            .sessions;
+        assert!(
+            rows.iter()
+                .find(|r| r.session_id == session.id)
+                .unwrap()
+                .unread
+        );
+    }
+
+    #[tokio::test]
     async fn receipt_does_not_clear_approval_and_nonmembers_cannot_read_or_ack() {
         let Some(pool) = shared_pool() else {
             return;

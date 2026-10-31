@@ -355,6 +355,9 @@ Backend delta: ~2 focused PRs (bearer path + refresh; token-login exchange).
   response rendered, so delayed acknowledgments cannot clear a newer reply.
   Pending approvals stay visible until resolved. The mobile bottom bar exposes
   Ready, Next and a searchable session sheet with previews and status labels.
+  Next cycles through all ready sessions. Mark read acknowledges the displayed
+  reply even after its transcript is pruned, without resolving pending approvals.
+  Notification settings opens over the dashboard to preserve unsent drafts.
 - **Device setup**: Android browsers can subscribe directly; installing to the
   Home Screen is optional. Android must also permit browser notifications.
   iPhone/iPad Web Push requires a Home Screen app. Settings includes a test

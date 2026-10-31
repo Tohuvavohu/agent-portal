@@ -1061,7 +1061,8 @@ pub fn dashboard_page() -> Html {
                             hidden={effective_hidden_sessions.clone()} focused={session_state.focused_id}
                             unavailable={attention.unavailable}
                             mutation_failed={attention.mutation_failed} toast={attention.toast} on_dismiss={attention.dismiss.clone()}
-                            on_select={on_mobile_select} on_mute={attention.mute.clone()} />
+                            on_select={on_mobile_select} on_mute={attention.mute.clone()}
+                            on_mark_read={attention.mark_read.clone()} on_settings={go_to_settings.clone()} />
                     }
 
                     // Keyboard hints

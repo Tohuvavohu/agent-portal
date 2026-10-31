@@ -26,7 +26,7 @@ enum Action {
     Received(ConnId, Vec<SessionAttention>),
     Failed(ConnId),
     Dismiss,
-    Muted(bool),
+    Updated(bool),
 }
 impl Reducible for AttentionState {
     type Action = Action;
@@ -34,7 +34,7 @@ impl Reducible for AttentionState {
         let mut next = (*self).clone();
         match action {
             Action::Dismiss => next.toast = None,
-            Action::Muted(success) => next.mutation_failed = !success,
+            Action::Updated(success) => next.mutation_failed = !success,
             Action::Failed(conn) => {
                 next.unavailable.insert(conn);
             }
@@ -85,6 +85,7 @@ pub(super) struct Attention {
     pub toast: Option<SessionKey>,
     pub dismiss: Callback<()>,
     pub mute: Callback<(SessionKey, bool)>,
+    pub mark_read: Callback<(SessionKey, uuid::Uuid)>,
 }
 
 fn visible() -> bool {
@@ -271,33 +272,24 @@ pub(super) fn use_attention(
             }
         });
     }
-    let mute = {
+    let mutate = {
         let state = state.clone();
         let sessions = sessions.clone();
-        let client_id = *client_id;
-        Callback::from(move |(key, muted)| {
-            if let Some(s) = sessions
-                .iter()
-                .find(|s| s.key == key && s.portal.can_write())
-                .cloned()
-            {
-                let state = state.clone();
-                spawn_local(async move {
-                    let success = update(
-                        &s.portal,
-                        key,
-                        &UpdateSessionAttention {
-                            client_id,
-                            viewing: false,
-                            seen_reply_id: None,
-                            muted: Some(muted),
-                        },
-                    )
-                    .await;
-                    state.dispatch(Action::Muted(success));
-                });
-            }
-        })
+        Callback::from(
+            move |(key, request): (SessionKey, UpdateSessionAttention)| {
+                if let Some(s) = sessions
+                    .iter()
+                    .find(|s| s.key == key && s.portal.can_write())
+                    .cloned()
+                {
+                    let state = state.clone();
+                    spawn_local(async move {
+                        let success = update(&s.portal, key, &request).await;
+                        state.dispatch(Action::Updated(success));
+                    });
+                }
+            },
+        )
     };
     use_effect_with(state.toast, |toast| {
         if toast.is_some() {
@@ -320,6 +312,35 @@ pub(super) fn use_attention(
             let state = state.clone();
             Callback::from(move |_| state.dispatch(Action::Dismiss))
         },
-        mute,
+        mute: {
+            let client_id = *client_id;
+            mutate.reform(move |(key, muted)| {
+                (
+                    key,
+                    UpdateSessionAttention {
+                        client_id,
+                        viewing: false,
+                        seen_reply_id: None,
+                        muted: Some(muted),
+                    },
+                )
+            })
+        },
+        mark_read: {
+            let client_id = *client_id;
+            // Explicit acknowledgments also work after transcript retention. Keep
+            // the displayed reply ID so a delayed click cannot consume a newer one.
+            mutate.reform(move |(key, reply_id)| {
+                (
+                    key,
+                    UpdateSessionAttention {
+                        client_id,
+                        viewing: false,
+                        seen_reply_id: Some(reply_id),
+                        muted: None,
+                    },
+                )
+            })
+        },
     }
 }

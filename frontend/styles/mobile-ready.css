@@ -154,7 +154,13 @@
     -webkit-box-orient: vertical;
     overflow-wrap: anywhere;
 }
-.ready-row .ready-mute {
+.ready-actions {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 4px;
+}
+.ready-row .ready-mute, .ready-row .ready-mark-read {
     font-size: 0.75rem;
     padding: 6px;
     background: transparent;
@@ -172,9 +178,11 @@
     font-size: 0.8rem;
     color: #a9b1d6;
 }
-.ready-sheet footer a {
+.ready-sheet footer button {
     color: #7aa2f7;
-    min-height: 30px;
+    background: transparent;
+    border: 0;
+    padding: 0;
 }
 .ready-toast {
     position: fixed;

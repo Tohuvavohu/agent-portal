@@ -18,6 +18,8 @@ pub(super) struct Props {
     pub on_dismiss: Callback<()>,
     pub on_select: Callback<usize>,
     pub on_mute: Callback<(SessionKey, bool)>,
+    pub on_mark_read: Callback<(SessionKey, uuid::Uuid)>,
+    pub on_settings: Callback<MouseEvent>,
 }
 #[function_component(MobileReady)]
 pub(super) fn mobile_ready(props: &Props) -> Html {
@@ -112,10 +114,18 @@ pub(super) fn mobile_ready(props: &Props) -> Html {
             && props.rows.get(&s.key).is_some_and(SessionAttention::ready)
     };
     let count = props.sessions.iter().filter(|s| is_ready(s)).count();
+    let start = props
+        .sessions
+        .iter()
+        .position(|s| Some(s.key) == props.focused)
+        .map_or(0, |i| i + 1);
     let next = props
         .sessions
         .iter()
         .enumerate()
+        .cycle()
+        .skip(start)
+        .take(props.sessions.len())
         .find(|(_, s)| is_ready(s) && Some(s.key) != props.focused)
         .map(|(i, _)| i);
     let selected = props.sessions.iter().find(|s| Some(s.key) == props.focused);
@@ -183,7 +193,7 @@ pub(super) fn mobile_ready(props: &Props) -> Html {
                             <input aria-label="Find a session" placeholder="Find a session" value={(*search).clone()} oninput={{let search=search.clone();Callback::from(move |e:InputEvent|search.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value()))}} />
                         </div>
                         if props.unavailable {<p class="ready-status" role="status">{"Reconnecting… statuses may be out of date."}</p>}
-                        if props.mutation_failed {<p class="ready-status" role="alert">{"Could not save notification preference. Try again."}</p>}
+                        if props.mutation_failed {<p class="ready-status" role="alert">{"Could not save this session update. Try again."}</p>}
                         <div class="ready-list">
                             if rows.is_empty() {<p class="ready-empty">{if *ready_only {"You're caught up. New responses will appear here."} else {"No matching sessions."}}</p>}
                             {for rows.into_iter().map(|(index,session)|{
@@ -200,11 +210,16 @@ pub(super) fn mobile_ready(props: &Props) -> Html {
                                             if let Some(at)=&row.reply_at {<time datetime={at.clone()}>{relative_time(at)}</time>}
                                         }
                                     </button>
+                                    <div class="ready-actions">
+                                    if let Some(reply_id)=status.filter(|s|s.unread).and_then(|s|s.reply_id) {
+                                        <button class="ready-mark-read" disabled={!session.portal.can_write()} aria-label={format!("Mark reply read for {}",session.info.session_name)} onclick={{let mark_read=props.on_mark_read.clone();let key=session.key;Callback::from(move |_|mark_read.emit((key,reply_id)))}}>{"Mark read"}</button>
+                                    }
                                     <button class="ready-mute" disabled={!session.portal.can_write()} aria-label={format!("{} notifications for {}",if muted{"Unmute"}else{"Mute"},session.info.session_name)} aria-pressed={muted.to_string()} onclick={{let mute=props.on_mute.clone();let key=session.key;Callback::from(move |_|mute.emit((key,!muted)))}}>{if muted{"Unmute"}else{"Mute"}}</button>
+                                    </div>
                                 </article>}
                             })}
                         </div>
-                        <footer><a href="/settings">{"Notification settings"}</a><span>{"Unread replies sync across your devices."}</span></footer>
+                        <footer><button onclick={{let close=close.clone();let settings=props.on_settings.clone();Callback::from(move |event|{close.emit(());settings.emit(event);})}}>{"Notification settings"}</button><span>{"Unread replies sync across your devices."}</span></footer>
                     </section>
                 </div>
             }

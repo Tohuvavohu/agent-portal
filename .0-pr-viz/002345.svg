@@ -19,7 +19,7 @@
     <rect x="1040" y="265" width="890" height="205" rx="15" fill="#1e202e" stroke="#9ece6a"/>
     <text x="1070" y="310" font-size="26" fill="#7aa2f7">session_attention + per-user receipts</text>
     <text x="1070" y="355" font-size="23" fill="#c0caf5">Persist completed output for Claude and Codex.</text>
-    <text x="1070" y="394" font-size="23" fill="#c0caf5">Acknowledge only the specific rendered reply.</text>
+    <text x="1070" y="394" font-size="23" fill="#c0caf5">Automatic or explicit receipts name a specific reply.</text>
     <text x="1070" y="437" font-size="23" fill="#9ece6a">Refresh and delayed receipts cannot lose a new reply.</text>
     <path d="M1485 477 V515 M1475 502 L1485 515 L1495 502" fill="none" stroke="#9ece6a" stroke-width="3"/>
 
@@ -32,8 +32,8 @@
 
     <rect x="1040" y="525" width="890" height="205" rx="15" fill="#1e202e" stroke="#9ece6a"/>
     <text x="1070" y="570" font-size="26" fill="#7aa2f7">MobileReady + use_attention</text>
-    <text x="1070" y="615" font-size="23" fill="#c0caf5">Ready count, Next, search, previews and mute.</text>
-    <text x="1070" y="654" font-size="23" fill="#c0caf5">Approvals stay ready; drafts survive session switches.</text>
+    <text x="1070" y="615" font-size="23" fill="#c0caf5">Ready count, cycling Next, previews, mute and Mark read.</text>
+    <text x="1070" y="654" font-size="23" fill="#c0caf5">Approvals stay ready; switches and settings keep drafts.</text>
     <text x="1070" y="697" font-size="23" fill="#9ece6a">Background transcripts stay unloaded.</text>
     <path d="M1485 737 V775 M1475 762 L1485 775 L1495 762" fill="none" stroke="#9ece6a" stroke-width="3"/>
 
